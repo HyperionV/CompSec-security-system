@@ -1,0 +1,6 @@
+mysql-connector-python==8.2.0
+cryptography==41.0.7
+pyotp==2.9.0
+qrcode[pil]==7.4.2
+pillow==10.1.0
+PyQt5==5.15.10 
