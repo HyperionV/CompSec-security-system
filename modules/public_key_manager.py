@@ -2,6 +2,27 @@ import os
 from datetime import datetime, timedelta
 from cryptography.hazmat.primitives import serialization
 
+# Utility functions for safe datetime handling
+def safe_to_datetime(dt_value):
+    """Convert string or datetime to datetime object safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, datetime):
+        return dt_value
+    if isinstance(dt_value, str):
+        return datetime.fromisoformat(dt_value)
+    return datetime.fromisoformat(str(dt_value))
+
+def safe_to_isoformat(dt_value):
+    """Convert string or datetime to ISO format string safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, str):
+        return dt_value  # Already a string
+    if hasattr(dt_value, 'isoformat'):
+        return dt_value.isoformat()
+    return str(dt_value)  # fallback to string conversion
+
 class PublicKeyManager:
     def __init__(self, user_email, database, logger):
         self.user_email = user_email
@@ -21,8 +42,8 @@ class PublicKeyManager:
                         results.append({
                             'email': self.user_email,
                             'public_key': key_data[0],
-                            'created_at': key_data[1],
-                            'expires_at': key_data[2],
+                            'created_at': safe_to_datetime(key_data[1]),
+                            'expires_at': safe_to_datetime(key_data[2]),
                             'source': 'own_key',
                             'key_id': key_data[3] if len(key_data) > 3 else None
                         })
@@ -33,7 +54,7 @@ class PublicKeyManager:
                 results.append({
                     'email': key_data[1],  # email from public_keys table
                     'public_key': key_data[2],  # public_key
-                    'created_at': key_data[3],  # created_at
+                    'created_at': safe_to_datetime(key_data[3]),  # created_at
                     'expires_at': None,  # Will be calculated
                     'source': 'imported',
                     'key_id': key_data[0]  # id from public_keys table
@@ -68,8 +89,8 @@ class PublicKeyManager:
                     results.append({
                         'email': self.user_email,
                         'public_key': key_data[0],
-                        'created_at': key_data[1],
-                        'expires_at': key_data[2],
+                        'created_at': safe_to_datetime(key_data[1]),
+                        'expires_at': safe_to_datetime(key_data[2]),
                         'source': 'own_key',
                         'key_id': key_data[3] if len(key_data) > 3 else None
                     })
@@ -80,7 +101,7 @@ class PublicKeyManager:
                 results.append({
                     'email': key_data[1],
                     'public_key': key_data[2],
-                    'created_at': key_data[3],
+                    'created_at': safe_to_datetime(key_data[3]),
                     'expires_at': None,
                     'source': 'imported',
                     'key_id': key_data[0]
@@ -107,6 +128,10 @@ class PublicKeyManager:
     def compute_key_status(self, created_at, expires_at=None):
         now = datetime.now()
         
+        # Convert to datetime objects safely
+        created_at = safe_to_datetime(created_at)
+        expires_at = safe_to_datetime(expires_at)
+        
         # For imported keys, calculate 90-day expiry from creation
         if expires_at is None:
             expires_at = created_at + timedelta(days=90)
@@ -121,11 +146,15 @@ class PublicKeyManager:
     def format_key_display(self, key_info):
         status = self.compute_key_status(key_info['created_at'], key_info['expires_at'])
         
+        # Convert datetime fields safely
+        created_at = safe_to_datetime(key_info['created_at'])
+        expires_at = safe_to_datetime(key_info['expires_at'])
+        
         # Calculate expiry date for display
-        if key_info['expires_at']:
-            expiry_date = key_info['expires_at']
+        if expires_at:
+            expiry_date = expires_at
         else:
-            expiry_date = key_info['created_at'] + timedelta(days=90)
+            expiry_date = created_at + timedelta(days=90)
         
         status_symbol = {
             'valid': '✓',
@@ -137,7 +166,7 @@ class PublicKeyManager:
         
         return {
             'email': key_info['email'],
-            'created_date': key_info['created_at'].strftime('%Y-%m-%d'),
+            'created_date': created_at.strftime('%Y-%m-%d'),
             'expiry_date': expiry_date.strftime('%Y-%m-%d'),
             'status': status,
             'status_symbol': status_symbol,

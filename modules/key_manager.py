@@ -1,6 +1,7 @@
 import os
 import secrets
 import base64
+import json
 from datetime import datetime, timedelta
 from typing import Dict, Tuple, Optional, Union
 
@@ -12,6 +13,27 @@ from cryptography.hazmat.backends import default_backend
 
 from .database import db
 from .logger import security_logger
+
+# Utility functions for safe datetime handling
+def safe_to_datetime(dt_value):
+    """Convert string or datetime to datetime object safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, datetime):
+        return dt_value
+    if isinstance(dt_value, str):
+        return datetime.fromisoformat(dt_value)
+    return datetime.fromisoformat(str(dt_value))
+
+def safe_to_isoformat(dt_value):
+    """Convert string or datetime to ISO format string safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, str):
+        return dt_value  # Already a string
+    if hasattr(dt_value, 'isoformat'):
+        return dt_value.isoformat()
+    return str(dt_value)  # fallback to string conversion
 
 class KeyManager:
     def __init__(self):
@@ -229,13 +251,12 @@ class KeyManager:
         """Store encrypted keys in database"""
         try:
             # Convert encrypted_private_key dict to JSON string for storage
-            import json
             encrypted_key_json = json.dumps(encrypted_private_key)
             
             # Insert into keys table
             query = """
             INSERT INTO keys (user_id, public_key, encrypted_private_key, created_at, expires_at, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?)
             """
             
             key_id = db.execute_query(
@@ -257,7 +278,7 @@ class KeyManager:
             query = """
             SELECT id, public_key, encrypted_private_key, created_at, expires_at, status
             FROM keys 
-            WHERE user_id = %s AND status IN ('valid', 'expiring')
+            WHERE user_id = ? AND status IN ('valid', 'expiring')
             ORDER BY created_at DESC
             LIMIT 1
             """
@@ -270,15 +291,14 @@ class KeyManager:
             key_data = result[0]
             
             # Parse encrypted private key JSON
-            import json
             encrypted_private_key = json.loads(key_data['encrypted_private_key'])
             
             key_info = {
                 'key_id': key_data['id'],
                 'public_key': key_data['public_key'],
                 'encrypted_private_key': encrypted_private_key,
-                'created_at': key_data['created_at'].isoformat(),
-                'expires_at': key_data['expires_at'].isoformat(),
+                'created_at': safe_to_isoformat(key_data['created_at']),
+                'expires_at': safe_to_isoformat(key_data['expires_at']),
                 'status': key_data['status']
             }
             
@@ -301,7 +321,7 @@ class KeyManager:
                 return False, message, None
             
             # Parse expiration date
-            expires_at = datetime.fromisoformat(key_data['expires_at'])
+            expires_at = safe_to_datetime(key_data['expires_at'])
             now = datetime.now()
             
             # Calculate days until expiration
@@ -346,7 +366,7 @@ class KeyManager:
     def update_key_status(self, key_id: int, status: str) -> bool:
         """Update key status in database"""
         try:
-            query = "UPDATE keys SET status = %s WHERE id = %s"
+            query = "UPDATE keys SET status = ? WHERE id = ?"
             rows_affected = db.execute_query(query, (status, key_id))
             return rows_affected > 0
         except Exception as e:
@@ -361,7 +381,7 @@ class KeyManager:
         """Generate new keys for user and mark old ones as expired"""
         try:
             # Mark existing keys as expired
-            query = "UPDATE keys SET status = 'expired' WHERE user_id = %s AND status IN ('valid', 'expiring')"
+            query = "UPDATE keys SET status = 'expired' WHERE user_id = ? AND status IN ('valid', 'expiring')"
             db.execute_query(query, (user_id,))
             
             # Create new keys
@@ -417,7 +437,7 @@ class KeyManager:
             query = """
             SELECT id, created_at, expires_at, status
             FROM keys 
-            WHERE user_id = %s
+            WHERE user_id = ?
             ORDER BY created_at DESC
             """
             
@@ -430,8 +450,8 @@ class KeyManager:
             for key_data in results:
                 key_info = {
                     'key_id': key_data['id'],
-                    'created_at': key_data['created_at'].isoformat(),
-                    'expires_at': key_data['expires_at'].isoformat(),
+                    'created_at': safe_to_isoformat(key_data['created_at']),
+                    'expires_at': safe_to_isoformat(key_data['expires_at']),
                     'status': key_data['status']
                 }
                 keys_list.append(key_info)

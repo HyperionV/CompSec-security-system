@@ -7,6 +7,37 @@ from pyzbar import pyzbar
 from datetime import datetime
 from .logger import security_logger
 
+# Utility functions for safe datetime handling
+def safe_to_datetime(dt_value):
+    """Convert string or datetime to datetime object safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, datetime):
+        return dt_value
+    if isinstance(dt_value, str):
+        return datetime.fromisoformat(dt_value)
+    return datetime.fromisoformat(str(dt_value))
+
+def safe_to_isoformat(dt_value):
+    """Convert string or datetime to ISO format string safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, str):
+        return dt_value  # Already a string
+    if hasattr(dt_value, 'isoformat'):
+        return dt_value.isoformat()
+    return str(dt_value)  # fallback to string conversion
+
+def safe_to_date_string(dt_value):
+    """Convert string or datetime to YYYY-MM-DD date string safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, str):
+        return dt_value[:10]  # Extract date part if it's already a string
+    if hasattr(dt_value, 'strftime'):
+        return dt_value.strftime('%Y-%m-%d')
+    return str(dt_value)[:10]  # fallback
+
 class QRCodeHandler:
     def __init__(self):
         self.qr_codes_dir = "data/qr_codes"
@@ -210,7 +241,7 @@ class QRCodeHandler:
                 return False, "No valid keys found for user"
             
             public_key_pem = key_data['public_key']
-            creation_date = key_data['created_at'][:10]  # Extract date part
+            creation_date = safe_to_date_string(key_data['created_at'])  # Safe conversion
             
             # Generate QR code
             success, result = self.generate_public_key_qr(email, public_key_pem, creation_date)

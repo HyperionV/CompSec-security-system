@@ -24,7 +24,7 @@ class SecurityLogger:
         try:
             query = """
             INSERT INTO activity_logs (user_id, action, status, details, ip_address)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?)
             """
             db.execute_query(query, (user_id, action, status, details, ip_address))
         except Exception as e:
@@ -65,10 +65,10 @@ class SecurityLogger:
     
     def get_logs(self, user_id=None, limit=100):
         if user_id:
-            query = "SELECT * FROM activity_logs WHERE user_id = %s ORDER BY timestamp DESC LIMIT %s"
+            query = "SELECT * FROM activity_logs WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?"
             return db.execute_query(query, (user_id, limit), fetch=True)
         else:
-            query = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT %s"
+            query = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT ?"
             return db.execute_query(query, (limit,), fetch=True)
 
 security_logger = SecurityLogger() 

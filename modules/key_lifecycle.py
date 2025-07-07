@@ -1,9 +1,30 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple, Optional
 
 from .database import db
 from .key_manager import key_manager
 from .logger import security_logger
+
+# Utility functions for safe datetime handling
+def safe_to_datetime(dt_value):
+    """Convert string or datetime to datetime object safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, datetime):
+        return dt_value
+    if isinstance(dt_value, str):
+        return datetime.fromisoformat(dt_value)
+    return datetime.fromisoformat(str(dt_value))
+
+def safe_to_isoformat(dt_value):
+    """Convert string or datetime to ISO format string safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, str):
+        return dt_value  # Already a string
+    if hasattr(dt_value, 'isoformat'):
+        return dt_value.isoformat()
+    return str(dt_value)  # fallback to string conversion
 
 class KeyLifecycleService:
     def __init__(self):
@@ -74,18 +95,17 @@ class KeyLifecycleService:
             return 0
     
     def get_expiring_keys_report(self) -> Tuple[bool, str, Optional[List]]:
-        """Get detailed report of keys requiring attention"""
+        """Generate detailed report of expiring and expired keys"""
         try:
-            expiring_keys = db.get_expiring_keys(self.warning_days)
+            expiring_keys = db.get_expiring_keys()
             expired_keys = db.get_expired_keys()
             
             report = []
             
             # Add expiring keys to report
             for key in expiring_keys:
-                expires_at = key['expires_at']
-                if isinstance(expires_at, str):
-                    expires_at = datetime.fromisoformat(expires_at)
+                expires_at = safe_to_datetime(key['expires_at'])
+                created_at = safe_to_datetime(key['created_at'])
                 
                 days_remaining = (expires_at - datetime.now()).days
                 
@@ -93,8 +113,8 @@ class KeyLifecycleService:
                     'key_id': key['id'],
                     'user_email': key['email'],
                     'user_name': key['name'],
-                    'created_at': key['created_at'].isoformat() if hasattr(key['created_at'], 'isoformat') else str(key['created_at']),
-                    'expires_at': expires_at.isoformat() if hasattr(expires_at, 'isoformat') else str(expires_at),
+                    'created_at': safe_to_isoformat(created_at),
+                    'expires_at': safe_to_isoformat(expires_at),
                     'status': key['status'],
                     'days_remaining': days_remaining,
                     'urgency': 'expiring'
@@ -102,9 +122,8 @@ class KeyLifecycleService:
             
             # Add expired keys to report
             for key in expired_keys:
-                expires_at = key['expires_at']
-                if isinstance(expires_at, str):
-                    expires_at = datetime.fromisoformat(expires_at)
+                expires_at = safe_to_datetime(key['expires_at'])
+                created_at = safe_to_datetime(key['created_at'])
                 
                 days_overdue = (datetime.now() - expires_at).days
                 
@@ -112,8 +131,8 @@ class KeyLifecycleService:
                     'key_id': key['id'],
                     'user_email': key['email'],
                     'user_name': key['name'],
-                    'created_at': key['created_at'].isoformat() if hasattr(key['created_at'], 'isoformat') else str(key['created_at']),
-                    'expires_at': expires_at.isoformat() if hasattr(expires_at, 'isoformat') else str(expires_at),
+                    'created_at': safe_to_isoformat(created_at),
+                    'expires_at': safe_to_isoformat(expires_at),
                     'status': 'expired',
                     'days_overdue': days_overdue,
                     'urgency': 'expired'
@@ -235,9 +254,7 @@ class KeyLifecycleService:
             
             users_list = []
             for result in results:
-                expires_at = result['expires_at']
-                if isinstance(expires_at, str):
-                    expires_at = datetime.fromisoformat(expires_at)
+                expires_at = safe_to_datetime(result['expires_at'])
                 
                 if result['status'] == 'expired':
                     days_info = (datetime.now() - expires_at).days
@@ -251,7 +268,7 @@ class KeyLifecycleService:
                     'email': result['email'],
                     'name': result['name'],
                     'key_status': result['status'],
-                    'expires_at': expires_at.isoformat(),
+                    'expires_at': safe_to_isoformat(expires_at),
                     'urgency': urgency
                 })
             
