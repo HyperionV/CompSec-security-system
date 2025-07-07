@@ -41,7 +41,8 @@ class AuthManager:
             return False, "Invalid email format"
         
         # Check if email already exists
-        if self.db.execute_query("SELECT id FROM users WHERE email = ?", (email,)):
+        result = self.db.execute_query("SELECT id FROM users WHERE email = ?", (email,), fetch=True)
+        if result:
             return False, "Email already registered"
         
         return True, "Valid email"
@@ -134,7 +135,7 @@ class AuthManager:
                                  password_hash, salt, recovery_code_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """
-            user_id = self.db.execute_insert(query, user_data)
+            user_id = self.db.execute_query(query, user_data)
             
             if not user_id:
                 raise Exception("Failed to create user record")
@@ -175,12 +176,12 @@ class AuthManager:
     def check_account_lockout(self, email: str) -> Tuple[bool, str, int]:
         """Check if account is locked and return status with remaining time"""
         query = "SELECT failed_attempts, locked_until FROM users WHERE email = ?"
-        result = self.db.execute_query(query, (email,))
+        result = self.db.execute_query(query, (email,), fetch=True)
         
         if not result:
             return False, "Account not found", 0
         
-        failed_attempts, locked_until = result[0]
+        failed_attempts, locked_until = result[0]['failed_attempts'], result[0]['locked_until']
         
         if locked_until and datetime.now() < locked_until:
             remaining_seconds = int((locked_until - datetime.now()).total_seconds())
@@ -212,10 +213,10 @@ class AuthManager:
         else:
             # Increment failed attempts
             query = "SELECT failed_attempts FROM users WHERE email = ?"
-            result = self.db.execute_query(query, (email,))
+            result = self.db.execute_query(query, (email,), fetch=True)
             
             if result:
-                current_attempts = result[0][0] + 1
+                current_attempts = result[0]['failed_attempts'] + 1
                 
                 if current_attempts >= 5:
                     # Lock account for 5 minutes
@@ -247,7 +248,7 @@ class AuthManager:
             SELECT id, email, name, password_hash, salt, role, failed_attempts 
             FROM users WHERE email = ?
         """
-        result = self.db.execute_query(query, (email,))
+        result = self.db.execute_query(query, (email,), fetch=True)
         
         if not result:
             # Apply delay even for non-existent users to prevent email enumeration
@@ -257,7 +258,13 @@ class AuthManager:
             return False, "Invalid credentials", None
         
         user_data = result[0]
-        user_id, user_email, name, stored_hash, salt, role, failed_attempts = user_data
+        user_id = user_data['id']
+        user_email = user_data['email'] 
+        name = user_data['name']
+        stored_hash = user_data['password_hash']
+        salt = user_data['salt']
+        role = user_data['role']
+        failed_attempts = user_data['failed_attempts']
         
         # Apply progressive delay based on previous failed attempts
         self.apply_progressive_delay(failed_attempts)
@@ -314,9 +321,15 @@ class AuthManager:
         return True, "Credentials verified. Please complete MFA verification.", user_info
 
     def complete_login_with_mfa(self, user_info: Dict, mfa_token: str, 
-                               mfa_type: str = "otp") -> Tuple[bool, str]:
+                               mfa_type: str = "otp", skip_mfa_verification: bool = False) -> Tuple[bool, str]:
         """Complete login after MFA verification"""
         from .mfa import MFAManager
+        
+        # Skip MFA verification if already done (e.g., by MFA screen)
+        if skip_mfa_verification:
+            self.logger.log_activity(action="LOGIN_COMPLETE", status="success", 
+                                         details=f"Login completed with MFA: {user_info['email']}")
+            return True, f"Login successful! Welcome {user_info['name']}"
         
         mfa_manager = MFAManager()
         
@@ -344,12 +357,17 @@ class AuthManager:
             SELECT id, failed_attempts, locked_until, created_at, role 
             FROM users WHERE email = ?
         """
-        result = self.db.execute_query(query, (email,))
+        result = self.db.execute_query(query, (email,), fetch=True)
         
         if not result:
             return {"exists": False}
         
-        user_id, failed_attempts, locked_until, created_at, role = result[0]
+        user_data = result[0]
+        user_id = user_data['id']
+        failed_attempts = user_data['failed_attempts']
+        locked_until = user_data['locked_until']
+        created_at = user_data['created_at']
+        role = user_data['role']
         is_locked, lock_message, remaining_time = self.check_account_lockout(email)
         
         # Get key status
@@ -423,12 +441,15 @@ class AuthManager:
         try:
             # Get current user data
             query = "SELECT email, password_hash, salt FROM users WHERE id = ?"
-            result = self.db.execute_query(query, (user_id,))
+            result = self.db.execute_query(query, (user_id,), fetch=True)
             
             if not result:
                 return False, "User not found"
             
-            email, current_hash, salt = result[0]
+            user_data = result[0]
+            email = user_data['email']
+            current_hash = user_data['password_hash']
+            salt = user_data['salt']
             
             # Verify current password
             provided_hash = self.hash_password(current_password, salt)
@@ -488,12 +509,12 @@ class AuthManager:
         try:
             # Verify user exists
             query = "SELECT email FROM users WHERE id = ?"
-            result = self.db.execute_query(query, (user_id,))
+            result = self.db.execute_query(query, (user_id,), fetch=True)
             
             if not result:
                 return False, "User not found"
             
-            email = result[0][0]
+            email = result[0]['email']
             
             # Generate new keys
             key_success, key_message, key_data = self.key_manager.create_user_keys(user_id, passphrase)
@@ -515,12 +536,12 @@ class AuthManager:
         try:
             # Verify user exists
             query = "SELECT email FROM users WHERE id = ?"
-            result = self.db.execute_query(query, (user_id,))
+            result = self.db.execute_query(query, (user_id,), fetch=True)
             
             if not result:
                 return False, "User not found"
             
-            email = result[0][0]
+            email = result[0]['email']
             
             # Renew keys using key manager
             renew_success, renew_message, new_key_data = self.key_manager.renew_user_keys(user_id, passphrase)
@@ -542,14 +563,17 @@ class AuthManager:
         try:
             # Get user information
             query = "SELECT id, email, recovery_code_hash FROM users WHERE email = ?"
-            result = self.db.execute_query(query, (email.lower().strip(),))
+            result = self.db.execute_query(query, (email.lower().strip(),), fetch=True)
             
             if not result:
                 self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failed", 
                                              details=f"Account recovery attempted for non-existent email: {email}")
                 return False, "Email not found"
             
-            user_id, user_email, stored_recovery_hash = result[0]
+            user_data = result[0]
+            user_id = user_data['id']
+            user_email = user_data['email']
+            stored_recovery_hash = user_data['recovery_code_hash']
             
             if not stored_recovery_hash:
                 self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failed", 

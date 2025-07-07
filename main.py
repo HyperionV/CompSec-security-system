@@ -8,6 +8,8 @@ import sys
 import os
 import getpass
 from typing import Optional, Dict
+import threading
+import time
 
 # Add modules directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,6 +25,43 @@ from modules.file_crypto import file_crypto
 from modules.digital_signature import DigitalSignature
 from modules.signature_verification import SignatureVerification
 from modules.public_key_manager import PublicKeyManager
+from datetime import datetime
+
+# Utility functions for safe datetime handling
+def safe_to_datetime(dt_value):
+    """Convert string or datetime to datetime object safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, datetime):
+        return dt_value
+    if isinstance(dt_value, str):
+        return datetime.fromisoformat(dt_value)
+    return datetime.fromisoformat(str(dt_value))
+
+def safe_to_isoformat(dt_value):
+    """Convert string or datetime to ISO format string safely"""
+    if dt_value is None:
+        return None
+    if isinstance(dt_value, str):
+        return dt_value  # Already a string
+    if hasattr(dt_value, 'isoformat'):
+        return dt_value.isoformat()
+    return str(dt_value)  # fallback to string conversion
+
+def safe_strftime(dt_value, format_str):
+    """Safely format datetime or string to specified format"""
+    if dt_value is None:
+        return 'N/A'
+    if isinstance(dt_value, str):
+        try:
+            # Try to parse string as datetime first
+            dt_obj = datetime.fromisoformat(dt_value)
+            return dt_obj.strftime(format_str)
+        except:
+            return dt_value  # Return as-is if can't parse
+    if hasattr(dt_value, 'strftime'):
+        return dt_value.strftime(format_str)
+    return str(dt_value)  # fallback
 
 class UserSession:
     """Manage user session state"""
@@ -546,7 +585,7 @@ def handle_list_imported_keys():
             for i, key in enumerate(keys, 1):
                 print(f"{i}. 📧 {key['owner_email']}")
                 print(f"   📅 Key Created: {key['creation_date']}")
-                print(f"   📥 Imported: {key['imported_at'].strftime('%Y-%m-%d %H:%M')}")
+                print(f"   📥 Imported: {safe_strftime(key['imported_at'], '%Y-%m-%d %H:%M')}")
                 print(f"   🆔 Key ID: {key['id']}")
                 print()
         
@@ -1074,7 +1113,7 @@ def handle_list_all_users():
         
         for user in users:
             status = "🔒 Locked" if user['is_locked'] else "✅ Active"
-            created = user['created_at'].strftime('%Y-%m-%d') if user['created_at'] else 'N/A'
+            created = safe_strftime(user['created_at'], '%Y-%m-%d')
             
             print(f"{user['id']:<4} {user['email']:<25} {user['name'][:19]:<20} "
                   f"{user['role']:<6} {status:<10} {created:<12}")
@@ -1367,7 +1406,7 @@ def handle_view_recent_logs(limit=50):
         print("-" * 100)
         
         for log in logs:
-            timestamp = log['created_at'].strftime('%Y-%m-%d %H:%M:%S') if log['created_at'] else 'N/A'
+            timestamp = safe_strftime(log['created_at'], '%Y-%m-%d %H:%M:%S')
             user_email = log['user_email'][:24] if log['user_email'] else 'System'
             action = log['action'][:19] if log['action'] else 'N/A'
             status = log['status']
@@ -1418,7 +1457,7 @@ def handle_filter_logs_by_user():
         print("-" * 80)
         
         for log in logs:
-            timestamp = log['created_at'].strftime('%Y-%m-%d %H:%M:%S') if log['created_at'] else 'N/A'
+            timestamp = safe_strftime(log['created_at'], '%Y-%m-%d %H:%M:%S')
             action = log['action'][:24] if log['action'] else 'N/A'
             status = log['status']
             details = log['details'][:35] + '...' if log['details'] and len(log['details']) > 35 else (log['details'] or '')
@@ -1468,7 +1507,7 @@ def handle_filter_logs_by_action():
         print("-" * 100)
         
         for log in logs:
-            timestamp = log['created_at'].strftime('%Y-%m-%d %H:%M:%S') if log['created_at'] else 'N/A'
+            timestamp = safe_strftime(log['created_at'], '%Y-%m-%d %H:%M:%S')
             user_email = log['user_email'][:24] if log['user_email'] else 'System'
             action = log['action'][:19] if log['action'] else 'N/A'
             status = log['status']
@@ -1747,4 +1786,13 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    # Use GUI by default, CLI available as fallback
+    import sys
+    
+    if '--cli' in sys.argv:
+        # Run CLI version
+        main()
+    else:
+        # Run GUI version
+        from gui.app import main as gui_main
+        gui_main() 

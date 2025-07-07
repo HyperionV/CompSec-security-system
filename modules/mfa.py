@@ -130,6 +130,48 @@ SecurityApp Team
             )
             return False, f"OTP sending failed: {str(e)}"
     
+    def generate_otp(self, user_id):
+        """Generate OTP and send via email - Method expected by GUI"""
+        try:
+            # Get user email
+            user_query = "SELECT email FROM users WHERE id = ?"
+            user_result = db.execute_query(user_query, (user_id,), fetch=True)
+            
+            if not user_result:
+                return False, "User not found", None
+            
+            user_email = user_result[0]['email']
+            
+            # Create OTP
+            success, otp_code, expires_at = self.create_otp(user_id)
+            
+            if not success:
+                return False, "Failed to generate OTP", None
+            
+            # Send OTP email
+            email_success, email_message = self.send_otp_email(user_email, otp_code, expires_at)
+            
+            # Prepare OTP data for GUI (includes code for testing)
+            otp_data = {
+                'otp_code': otp_code,
+                'expires_at': expires_at,
+                'user_email': user_email
+            }
+            
+            if email_success:
+                return True, f"OTP sent to {user_email}. {email_message}", otp_data
+            else:
+                return False, f"Failed to send OTP: {email_message}", None
+                
+        except Exception as e:
+            security_logger.log_activity(
+                user_id=user_id,
+                action='generate_otp',
+                status='failure',
+                details=f'Exception: {str(e)}'
+            )
+            return False, f"OTP generation failed: {str(e)}", None
+    
     def generate_otp_code(self):
         """Generate 6-digit OTP code"""
         return str(secrets.randbelow(999999)).zfill(6)
@@ -145,12 +187,21 @@ SecurityApp Team
             otp_code = self.generate_otp_code()
             expires_at = datetime.now() + timedelta(minutes=self.otp_expiry_minutes)
             
-            # Store in database
+            # Store in database - explicitly set used = 0, format datetime for SQLite
             query = """
-            INSERT INTO otp_codes (user_id, otp_code, expires_at)
-            VALUES (?, ?, ?)
+            INSERT INTO otp_codes (user_id, otp_code, expires_at, used)
+            VALUES (?, ?, ?, 0)
             """
-            otp_id = db.execute_query(query, (user_id, otp_code, expires_at))
+            # Format datetime for SQLite compatibility
+            expires_at_str = expires_at.strftime('%Y-%m-%d %H:%M:%S')
+            otp_id = db.execute_query(query, (user_id, otp_code, expires_at_str))
+            
+            # Debug: Verify the OTP was actually inserted
+            verify_query = "SELECT * FROM otp_codes WHERE user_id = ? AND otp_code = ?"
+            verify_result = db.execute_query(verify_query, (user_id, otp_code), fetch=True)
+            print(f"DEBUG: OTP inserted for user {user_id}, code {otp_code}, found in DB: {len(verify_result) if verify_result else 0}")
+            if verify_result:
+                print(f"DEBUG: Inserted OTP record: {verify_result[0]}")
             
             if otp_id:
                 security_logger.log_activity(
@@ -176,19 +227,33 @@ SecurityApp Team
                 status='failure',
                 details=f'Exception: {str(e)}'
             )
+            print(f"DEBUG: Exception in create_otp: {str(e)}")
             return False, None, None
     
     def verify_otp(self, user_id, otp_code):
         """Verify OTP code for user"""
         try:
-            # Get valid OTP codes for user
+            # Debug: First check all OTP codes for this user
+            debug_query = "SELECT * FROM otp_codes WHERE user_id = ?"
+            debug_results = db.execute_query(debug_query, (user_id,), fetch=True)
+            print(f"DEBUG: All OTP codes for user {user_id}: {debug_results}")
+            
+            # Get current time for comparison
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"DEBUG: Current time: {current_time}")
+            
+            # Get valid OTP codes for user - use string comparison for SQLite
             query = """
             SELECT id, otp_code, expires_at 
             FROM otp_codes 
-            WHERE user_id = ? AND used = 0 AND expires_at > datetime('now')
+            WHERE user_id = ? AND used = 0 AND expires_at > ?
             ORDER BY created_at DESC
             """
-            results = db.execute_query(query, (user_id,), fetch=True)
+            results = db.execute_query(query, (user_id, current_time), fetch=True)
+            
+            print(f"DEBUG: Valid OTP codes found: {len(results) if results else 0}")
+            if results:
+                print(f"DEBUG: OTP codes: {results}")
             
             if not results:
                 security_logger.log_activity(
@@ -200,7 +265,9 @@ SecurityApp Team
                 return False, "No valid OTP code found or code expired"
             
             # Check if provided code matches any valid code
+            print(f"DEBUG: Looking for OTP code: '{otp_code}'")
             for otp_record in results:
+                print(f"DEBUG: Comparing with DB code: '{otp_record['otp_code']}'")
                 if otp_record['otp_code'] == otp_code:
                     # Mark OTP as used
                     update_query = "UPDATE otp_codes SET used = 1 WHERE id = ?"
@@ -230,6 +297,7 @@ SecurityApp Team
                 status='failure',
                 details=f'Exception: {str(e)}'
             )
+            print(f"DEBUG: Exception in verify_otp: {str(e)}")
             return False, f"OTP verification failed: {str(e)}"
     
     def setup_totp(self, user_email, issuer_name="SecurityApp"):
