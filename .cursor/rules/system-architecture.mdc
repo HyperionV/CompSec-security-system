@@ -1,0 +1,212 @@
+# Security Application - System Architecture
+
+## Overview
+
+A comprehensive desktop Security Application implementing 17 core security functionalities including cryptographic operations, user management, multi-factor authentication, and file security features.
+
+## Technology Stack
+
+- **Language:** Python 3.x
+- **GUI Framework:** PyQt5
+- **Database:** SQLite with MySQL connector support
+- **Cryptography:** RSA (2048-bit), AES-GCM, SHA-256
+- **Authentication:** OTP/TOTP with Google Authenticator integration
+- **File Operations:** QR code generation/reading, digital signatures
+
+## Core Libraries
+
+```python
+# Security & Cryptography
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+import hashlib, secrets, base64
+
+# MFA & QR Codes
+import pyotp, qrcode
+from PIL import Image
+
+# GUI & Database
+from PyQt5 import QtWidgets, QtCore, QtGui
+import sqlite3, mysql.connector
+
+# Utilities
+import smtplib, json, datetime, os, logging
+```
+
+## Database Schema
+
+### Users Table
+
+```sql
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    phone VARCHAR(20),
+    address TEXT,
+    birth_date DATE,
+    password_hash VARCHAR(255) NOT NULL,
+    salt VARCHAR(255) NOT NULL,
+    role VARCHAR(20) DEFAULT 'user',
+    is_locked BOOLEAN DEFAULT FALSE,
+    failed_attempts INTEGER DEFAULT 0,
+    lock_until TIMESTAMP NULL,
+    recovery_code VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Keys Table
+
+```sql
+CREATE TABLE keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    public_key TEXT NOT NULL,
+    encrypted_private_key TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    status VARCHAR(20) DEFAULT 'valid',
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+### OTP Codes Table
+
+```sql
+CREATE TABLE otp_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    code VARCHAR(6) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+### Activity Logs Table
+
+```sql
+CREATE TABLE activity_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    action VARCHAR(255) NOT NULL,
+    details TEXT,
+    ip_address VARCHAR(45),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+### Public Keys Table
+
+```sql
+CREATE TABLE public_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_email VARCHAR(255) NOT NULL,
+    public_key TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    imported_by INTEGER,
+    qr_code_path VARCHAR(255),
+    FOREIGN KEY (imported_by) REFERENCES users(id)
+);
+```
+
+## Directory Structure
+
+```
+SecurityApp/
+├── main.py                     # Application entry point
+├── config/
+│   └── database.sql           # Database schema
+├── modules/                   # Core business logic
+│   ├── auth.py               # Authentication & user management
+│   ├── database_sqlite.py    # Database operations
+│   ├── mfa.py               # Multi-factor authentication
+│   ├── key_manager.py       # RSA key lifecycle management
+│   ├── file_crypto.py       # File encryption/decryption
+│   ├── digital_signature.py # Digital signing operations
+│   ├── qr_handler.py        # QR code operations
+│   ├── public_key_manager.py # Public key management
+│   ├── key_lifecycle.py     # Key expiration monitoring
+│   └── logger.py            # Security audit logging
+├── gui/                      # PyQt5 GUI components
+│   ├── main_window.py       # Main application window
+│   ├── login_screen.py      # Login interface
+│   ├── mfa_screen.py        # MFA verification
+│   ├── main_app_screen.py   # Main dashboard
+│   ├── auth/
+│   │   └── registration_dialog.py # User registration
+│   ├── tabs/                # Feature tabs
+│   │   ├── file_operations_tab.py
+│   │   ├── key_management_tab.py
+│   │   ├── signature_tab.py
+│   │   ├── qr_operations_tab.py
+│   │   ├── public_keys_tab.py
+│   │   ├── account_tab.py
+│   │   └── admin_tab.py
+│   ├── controllers/
+│   │   └── auth_controller.py
+│   └── utils/
+│       └── dialogs.py
+├── data/                     # Data storage
+│   ├── encrypted/           # Encrypted files
+│   ├── decrypted/          # Decrypted files
+│   ├── qr_codes/           # Generated QR codes
+│   └── signatures/         # Digital signature files
+├── logs/                    # Security audit logs
+└── tests/                   # Test files and scenarios
+```
+
+## Security Architecture
+
+### Authentication Flow
+
+1. **Registration:** SHA-256(passphrase + salt) → Database storage
+2. **Login:** Credential verification → MFA challenge
+3. **MFA:** OTP/TOTP verification → Session establishment
+4. **Session:** Maintained state with timeout and activity tracking
+
+### Cryptographic Operations
+
+1. **Key Generation:** RSA 2048-bit key pairs
+2. **Key Storage:** Private keys encrypted with AES (PBKDF2-derived key)
+3. **File Encryption:** AES-GCM with RSA-encrypted session keys
+4. **Digital Signatures:** SHA-256 hash signed with RSA private key
+
+### Data Protection
+
+- **At Rest:** All sensitive data encrypted
+- **In Transit:** Secure key exchange via RSA
+- **In Memory:** Minimal exposure, immediate cleanup
+- **Audit Trail:** Comprehensive security logging
+
+## Module Dependencies
+
+```mermaid
+graph TD
+    A[main.py] --> B[gui/main_window.py]
+    B --> C[modules/auth.py]
+    B --> D[modules/database_sqlite.py]
+    C --> E[modules/mfa.py]
+    C --> F[modules/logger.py]
+    B --> G[gui/tabs/*.py]
+    G --> H[modules/key_manager.py]
+    G --> I[modules/file_crypto.py]
+    G --> J[modules/digital_signature.py]
+    G --> K[modules/qr_handler.py]
+    H --> L[modules/key_lifecycle.py]
+    I --> M[modules/public_key_manager.py]
+```
+
+## Security Principles
+
+1. **Defense in Depth:** Multiple security layers
+2. **Principle of Least Privilege:** Role-based access control
+3. **Fail Secure:** Secure defaults and failure modes
+4. **Audit Trail:** Comprehensive activity logging
+5. **Data Minimization:** Only necessary data collection
+6. **Encryption Everywhere:** Data protection at all levels

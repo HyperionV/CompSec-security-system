@@ -1,0 +1,905 @@
+# Security Application - Features Documentation
+
+## Feature Overview
+
+The Security Application implements 17 core security functionalities organized into logical categories:
+
+### Authentication & Account Management (Features 1-2, 5, 15, 17)
+
+- User Registration
+- Multi-Factor Authentication (MFA)
+- Account Information Updates
+- Login Attempt Limits
+- Account Recovery
+
+### Cryptographic Operations (Features 3, 6-9)
+
+- RSA Key Management
+- File Encryption/Decryption
+- Digital Signatures
+- Signature Verification
+
+### Key Sharing & Discovery (Features 4, 14)
+
+- QR Code Public Key Sharing
+- Public Key Search
+
+### System Administration (Features 10-11)
+
+- Role-Based Access Control
+- Security Audit Logging
+
+### Advanced Features (Features 12-13, 16)
+
+- Large File Processing
+- Key Lifecycle Management
+- Flexible File Format Options
+
+---
+
+## Detailed Feature Specifications
+
+### Feature 1: User Registration
+
+**Purpose:** Secure user account creation with strong authentication
+
+**Input Requirements:**
+
+- Email address (unique identifier)
+- Full name
+- Phone number
+- Physical address
+- Date of birth
+- Passphrase (minimum 8 characters, mixed case, numbers, symbols)
+
+**Security Implementation:**
+
+```python
+# Passphrase hashing process
+salt = secrets.token_hex(32)
+passphrase_hash = hashlib.sha256((passphrase + salt).encode()).hexdigest()
+recovery_code = secrets.token_urlsafe(32)  # One-time display
+```
+
+**Validation Rules:**
+
+- Email uniqueness check against database
+- Passphrase strength validation
+- Required field completion
+- Recovery code generation and display
+
+**Database Storage:**
+
+```sql
+INSERT INTO users (email, name, phone, address, birth_date,
+                  password_hash, salt, recovery_code, role)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user')
+```
+
+**User Experience Flow:**
+
+1. Launch application → Registration form
+2. Fill required information → Validation feedback
+3. Recovery code display (one-time) → Manual backup required
+4. Account creation confirmation → Auto-login
+
+---
+
+### Feature 2: Multi-Factor Authentication (MFA)
+
+**Purpose:** Two-factor authentication using OTP/TOTP
+
+**Authentication Flow:**
+
+```python
+# Stage 1: Credential Verification
+email_valid = check_email_exists(email)
+password_valid = verify_password_hash(password, stored_hash, salt)
+
+# Stage 2: MFA Challenge
+if credentials_valid:
+    otp_code = generate_6_digit_code()
+    send_otp_email(email, otp_code)  # Simulated email
+    store_otp_with_expiry(user_id, otp_code, 5_minutes)
+```
+
+**OTP Generation:**
+
+- 6-digit random code
+- 5-minute expiration window
+- Single-use verification
+- Email delivery simulation
+
+**TOTP Integration:**
+
+```python
+# Google Authenticator Setup
+secret = pyotp.random_base32()
+totp_url = pyotp.totp.TOTP(secret).provisioning_uri(
+    name=user_email,
+    issuer_name="SecurityApp"
+)
+qr_code = qrcode.make(totp_url)
+```
+
+**Security Features:**
+
+- Failed attempt tracking
+- Account lockout after 5 failures
+- 5-minute lockout duration
+- Real-time countdown display
+
+---
+
+### Feature 3: RSA Key Management
+
+**Purpose:** Generate and manage 2048-bit RSA key pairs
+
+**Key Generation Process:**
+
+```python
+# RSA Key Pair Generation
+private_key = rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=2048
+)
+public_key = private_key.public_key()
+
+# Private Key Encryption
+key_derivation = PBKDF2HMAC(
+    algorithm=hashes.SHA256(),
+    length=32,
+    salt=salt,
+    iterations=100000
+)
+aes_key = key_derivation.finalize()
+encrypted_private_key = encrypt_with_aes(private_key_pem, aes_key)
+```
+
+**Key Lifecycle:**
+
+- 90-day expiration period
+- Automatic status tracking
+- Renewal notifications
+- Secure storage with AES encryption
+
+**Key Status States:**
+
+- **Valid:** Full functionality (0-83 days)
+- **Expiring Soon:** Warning state (84-90 days)
+- **Expired:** Renewal required (>90 days)
+
+**Storage Format:**
+
+```python
+# Public Key: PEM format
+public_key_pem = public_key.public_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PublicFormat.SubjectPublicKeyInfo
+)
+
+# Private Key: AES-encrypted PEM
+private_key_pem = private_key.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption()
+)
+```
+
+---
+
+### Feature 4: QR Code Public Key Sharing
+
+**Purpose:** Secure public key distribution via QR codes
+
+**QR Code Generation:**
+
+```python
+# QR Code Data Structure
+qr_data = {
+    "email": user_email,
+    "created_at": datetime.now().isoformat(),
+    "public_key": base64.b64encode(public_key_pem).decode()
+}
+qr_json = json.dumps(qr_data)
+qr_code = qrcode.make(qr_json, box_size=10, border=4)
+```
+
+**File Operations:**
+
+- Save as PNG format in `data/qr_codes/`
+- Filename: `{email}_{timestamp}.png`
+- Import from existing QR images
+- Validation of QR data structure
+
+**Import Process:**
+
+1. Select QR code image file
+2. Decode and parse JSON data
+3. Validate public key format
+4. Store in public_keys table
+5. Associate with importing user
+
+---
+
+### Feature 5: Account Information Updates
+
+**Purpose:** Secure profile and credential management
+
+**Updateable Fields:**
+
+- Full name
+- Phone number
+- Physical address
+- Date of birth
+- Passphrase (with special handling)
+
+**Passphrase Change Process:**
+
+```python
+# Critical Security Operation
+def change_passphrase(old_pass, new_pass):
+    # 1. Verify current passphrase
+    if not verify_current_password(old_pass):
+        raise AuthenticationError("Invalid current passphrase")
+
+    # 2. Decrypt private key with old passphrase
+    old_aes_key = derive_key_from_passphrase(old_pass, old_salt)
+    private_key_pem = decrypt_private_key(encrypted_key, old_aes_key)
+
+    # 3. Re-encrypt with new passphrase
+    new_salt = secrets.token_hex(32)
+    new_aes_key = derive_key_from_passphrase(new_pass, new_salt)
+    new_encrypted_key = encrypt_private_key(private_key_pem, new_aes_key)
+
+    # 4. Update database atomically
+    update_user_credentials(new_pass_hash, new_salt, new_encrypted_key)
+```
+
+**Data Integrity:**
+
+- Atomic transaction for passphrase changes
+- Private key continuity validation
+- Rollback on any failure
+
+---
+
+### Feature 6: File Encryption
+
+**Purpose:** Secure file encryption for designated recipients
+
+**Encryption Architecture:**
+
+```python
+# Hybrid Encryption System
+session_key = secrets.token_bytes(32)  # AES-256 key
+iv = secrets.token_bytes(16)           # AES initialization vector
+
+# File encryption with AES-GCM
+cipher = Cipher(algorithms.AES(session_key), modes.GCM(iv))
+encryptor = cipher.encryptor()
+ciphertext = encryptor.update(file_data) + encryptor.finalize()
+
+# Session key encryption with recipient's RSA public key
+encrypted_session_key = recipient_public_key.encrypt(
+    session_key,
+    padding.OAEP(
+        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+        algorithm=hashes.SHA256(),
+        label=None
+    )
+)
+```
+
+**Metadata Structure:**
+
+```python
+metadata = {
+    "sender": sender_email,
+    "filename": original_filename,
+    "timestamp": datetime.now().isoformat(),
+    "file_size": len(file_data),
+    "encryption_method": "AES-256-GCM",
+    "key_exchange": "RSA-OAEP"
+}
+```
+
+**Output Formats:**
+
+- **Combined (.enc):** Single file with embedded key
+- **Separate (.enc + .key):** File and key as separate entities
+
+---
+
+### Feature 7: File Decryption
+
+**Purpose:** Decrypt files using private key
+
+**Decryption Process:**
+
+```python
+def decrypt_file(encrypted_file_path, passphrase):
+    # 1. Auto-detect file format
+    file_format = detect_encryption_format(encrypted_file_path)
+
+    # 2. Extract encrypted session key and ciphertext
+    if file_format == "combined":
+        encrypted_key, ciphertext, metadata = parse_combined_file()
+    else:
+        encrypted_key = load_key_file()
+        ciphertext = load_encrypted_file()
+
+    # 3. Decrypt session key with private key
+    private_key = load_and_decrypt_private_key(passphrase)
+    session_key = private_key.decrypt(encrypted_key, padding.OAEP(...))
+
+    # 4. Decrypt file content
+    decrypted_data = decrypt_with_aes_gcm(ciphertext, session_key)
+
+    # 5. Restore original file
+    save_decrypted_file(decrypted_data, metadata.filename)
+```
+
+**Security Validations:**
+
+- Private key access verification
+- Session key decryption validation
+- File integrity checks
+- Metadata verification
+
+---
+
+### Feature 8: Digital Signature Creation
+
+**Purpose:** Create cryptographic signatures for file authenticity
+
+**Signing Process:**
+
+```python
+def sign_file(file_path, private_key):
+    # 1. Calculate file hash
+    with open(file_path, 'rb') as f:
+        file_data = f.read()
+    file_hash = hashlib.sha256(file_data).digest()
+
+    # 2. Sign hash with private key
+    signature = private_key.sign(
+        file_hash,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+
+    # 3. Create signature file
+    signature_data = {
+        "signature": base64.b64encode(signature).decode(),
+        "signer_email": current_user_email,
+        "file_name": os.path.basename(file_path),
+        "timestamp": datetime.now().isoformat(),
+        "hash_algorithm": "SHA-256",
+        "signature_algorithm": "RSA-PSS"
+    }
+
+    signature_file = file_path + '.sig'
+    save_signature_file(signature_file, signature_data)
+```
+
+**Signature File Format:**
+
+```json
+{
+  "signature": "base64_encoded_signature",
+  "signer_email": "user@example.com",
+  "file_name": "document.pdf",
+  "timestamp": "2024-01-15T10:30:00",
+  "hash_algorithm": "SHA-256",
+  "signature_algorithm": "RSA-PSS"
+}
+```
+
+---
+
+### Feature 9: Digital Signature Verification
+
+**Purpose:** Verify file authenticity and signer identity
+
+**Verification Process:**
+
+```python
+def verify_signature(file_path, signature_path):
+    # 1. Load signature data
+    signature_data = load_signature_file(signature_path)
+    signature_bytes = base64.b64decode(signature_data['signature'])
+
+    # 2. Calculate current file hash
+    current_hash = calculate_file_hash(file_path)
+
+    # 3. Find signer's public key
+    signer_email = signature_data['signer_email']
+    public_keys = find_public_keys_by_email(signer_email)
+
+    # 4. Attempt verification with each public key
+    for public_key in public_keys:
+        try:
+            public_key.verify(
+                signature_bytes,
+                current_hash,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+            return {
+                "valid": True,
+                "signer": signer_email,
+                "timestamp": signature_data['timestamp']
+            }
+        except InvalidSignature:
+            continue
+
+    return {"valid": False, "reason": "No matching public key found"}
+```
+
+**Verification Results:**
+
+- **Valid:** Signer identity and file integrity confirmed
+- **Invalid:** Signature mismatch or file modification detected
+- **Unknown:** No public key available for verification
+
+---
+
+### Feature 10: Role-Based Access Control
+
+**Purpose:** Administrative privileges and user management
+
+**Role Definitions:**
+
+```python
+ROLES = {
+    'user': {
+        'permissions': [
+            'encrypt_files', 'decrypt_files', 'sign_files', 'verify_signatures',
+            'manage_own_keys', 'update_own_profile', 'view_own_logs'
+        ]
+    },
+    'admin': {
+        'permissions': [
+            'all_user_permissions',
+            'view_all_users', 'lock_unlock_accounts', 'view_system_logs',
+            'manage_user_roles', 'system_administration'
+        ]
+    }
+}
+```
+
+**Admin Functions:**
+
+- View all user accounts
+- Lock/unlock user accounts
+- View system-wide activity logs
+- Manage user roles and permissions
+- System configuration access
+
+**Security Implementation:**
+
+```python
+def require_admin(func):
+    def wrapper(*args, **kwargs):
+        if current_user.role != 'admin':
+            raise PermissionError("Admin access required")
+        return func(*args, **kwargs)
+    return wrapper
+
+@require_admin
+def view_all_users():
+    return database.get_all_users()
+```
+
+---
+
+### Feature 11: Security Audit Logging
+
+**Purpose:** Comprehensive activity tracking and security monitoring
+
+**Logged Events:**
+
+```python
+LOG_EVENTS = [
+    'user_registration', 'login_attempt', 'login_success', 'login_failure',
+    'mfa_challenge', 'mfa_success', 'mfa_failure', 'account_locked',
+    'key_generation', 'key_renewal', 'file_encryption', 'file_decryption',
+    'digital_signature', 'signature_verification', 'profile_update',
+    'passphrase_change', 'admin_action', 'system_access'
+]
+```
+
+**Log Entry Format:**
+
+```python
+log_entry = {
+    "timestamp": datetime.now().isoformat(),
+    "user_id": user.id,
+    "email": user.email,
+    "action": "file_encryption",
+    "details": "Encrypted file: document.pdf for user@example.com",
+    "ip_address": get_client_ip(),
+    "status": "success",
+    "session_id": current_session.id
+}
+```
+
+**Log Storage:**
+
+- Database table: `activity_logs`
+- File logging: `logs/security.log`
+- Real-time monitoring capability
+- Log rotation and archival
+
+---
+
+### Feature 12: Large File Processing
+
+**Purpose:** Efficient handling of files >5MB through block processing
+
+**Block Processing Algorithm:**
+
+```python
+def encrypt_large_file(file_path, recipient_email):
+    BLOCK_SIZE = 1024 * 1024  # 1MB blocks
+    file_size = os.path.getsize(file_path)
+
+    if file_size <= 5 * 1024 * 1024:  # 5MB threshold
+        return encrypt_standard_file(file_path, recipient_email)
+
+    # Large file processing
+    session_key = secrets.token_bytes(32)
+    blocks = []
+
+    with open(file_path, 'rb') as f:
+        block_index = 0
+        while True:
+            block_data = f.read(BLOCK_SIZE)
+            if not block_data:
+                break
+
+            # Encrypt each block with unique IV
+            iv = secrets.token_bytes(16)
+            encrypted_block = encrypt_block_aes_gcm(block_data, session_key, iv)
+
+            blocks.append({
+                "index": block_index,
+                "iv": base64.b64encode(iv).decode(),
+                "data": base64.b64encode(encrypted_block).decode(),
+                "hash": hashlib.sha256(block_data).hexdigest()
+            })
+            block_index += 1
+
+    # Encrypt session key and create metadata
+    metadata = {
+        "total_blocks": len(blocks),
+        "block_size": BLOCK_SIZE,
+        "original_size": file_size,
+        "processing_mode": "large_file"
+    }
+
+    return create_encrypted_package(blocks, session_key, metadata)
+```
+
+**Integrity Verification:**
+
+- Individual block hash verification
+- Block order validation
+- Complete file reassembly verification
+- Progress tracking during processing
+
+---
+
+### Feature 13: Key Lifecycle Management
+
+**Purpose:** Automated key status monitoring and renewal management
+
+**Key Status Monitoring:**
+
+```python
+def check_key_status(key_creation_date):
+    days_since_creation = (datetime.now() - key_creation_date).days
+
+    if days_since_creation >= 90:
+        return "expired"
+    elif days_since_creation >= 83:  # 7-day warning
+        return "expiring_soon"
+    else:
+        return "valid"
+
+def get_key_status_display(status, days_remaining):
+    status_display = {
+        "valid": f"✅ Valid ({days_remaining} days remaining)",
+        "expiring_soon": f"⚠️ Expiring Soon ({days_remaining} days remaining)",
+        "expired": "❌ Expired - Renewal Required"
+    }
+    return status_display.get(status, "Unknown")
+```
+
+**Key Renewal Process:**
+
+```python
+def renew_key_pair(user_id, current_passphrase):
+    # 1. Verify user authorization
+    if not verify_passphrase(user_id, current_passphrase):
+        raise AuthenticationError("Invalid passphrase")
+
+    # 2. Generate new key pair
+    new_private_key, new_public_key = generate_rsa_key_pair()
+
+    # 3. Encrypt new private key
+    encrypted_private_key = encrypt_private_key(new_private_key, current_passphrase)
+
+    # 4. Update database with new keys
+    update_user_keys(user_id, new_public_key, encrypted_private_key)
+
+    # 5. Archive old keys (if required)
+    archive_old_keys(user_id)
+
+    return "Key pair successfully renewed"
+```
+
+**Automated Notifications:**
+
+- Daily background key status checks
+- Email notifications for expiring keys
+- Dashboard status indicators
+- Renewal reminders and guidance
+
+---
+
+### Feature 14: Public Key Search
+
+**Purpose:** Discover and manage public keys for encryption operations
+
+**Search Functionality:**
+
+```python
+def search_public_keys(email_query):
+    # Search in imported public keys
+    imported_keys = database.query("""
+        SELECT pk.*, u.name as owner_name
+        FROM public_keys pk
+        LEFT JOIN users u ON pk.owner_email = u.email
+        WHERE pk.owner_email LIKE ?
+    """, f"%{email_query}%")
+
+    # Include current user's own public key
+    own_key = get_user_public_key(current_user.id)
+
+    results = []
+    for key in imported_keys + [own_key]:
+        results.append({
+            "email": key.owner_email,
+            "owner_name": key.owner_name,
+            "created_at": key.created_at,
+            "key_status": get_key_status(key.created_at),
+            "qr_code_available": key.qr_code_path is not None,
+            "can_encrypt": key.key_status in ["valid", "expiring_soon"]
+        })
+
+    return results
+```
+
+**Search Results Display:**
+
+- Email address and owner name
+- Key creation date and status
+- QR code availability indicator
+- Encryption capability status
+- Import/export options
+
+**Key Management Actions:**
+
+- View public key details
+- Export key to file
+- Generate QR code for sharing
+- Remove imported keys
+- Refresh key status
+
+---
+
+### Feature 15: Login Attempt Limits
+
+**Purpose:** Brute force protection through account lockout
+
+**Lockout Algorithm:**
+
+```python
+class LoginAttemptManager:
+    MAX_ATTEMPTS = 5
+    LOCKOUT_DURATION = 300  # 5 minutes
+
+    def record_failed_attempt(self, email):
+        user = get_user_by_email(email)
+        user.failed_attempts += 1
+
+        if user.failed_attempts >= self.MAX_ATTEMPTS:
+            user.is_locked = True
+            user.lock_until = datetime.now() + timedelta(seconds=self.LOCKOUT_DURATION)
+            log_security_event("account_locked", user.id, f"Account locked after {self.MAX_ATTEMPTS} failed attempts")
+
+        update_user(user)
+
+    def check_lockout_status(self, email):
+        user = get_user_by_email(email)
+
+        if user.is_locked:
+            if datetime.now() >= user.lock_until:
+                # Lockout expired, reset
+                user.is_locked = False
+                user.failed_attempts = 0
+                user.lock_until = None
+                update_user(user)
+                return {"locked": False}
+            else:
+                remaining_time = (user.lock_until - datetime.now()).total_seconds()
+                return {
+                    "locked": True,
+                    "remaining_time": int(remaining_time),
+                    "message": f"Account locked. Try again in {int(remaining_time)} seconds."
+                }
+
+        return {"locked": False}
+
+    def reset_attempts_on_success(self, email):
+        user = get_user_by_email(email)
+        user.failed_attempts = 0
+        update_user(user)
+```
+
+**User Experience:**
+
+- Real-time countdown display during lockout
+- Clear messaging about lockout reason
+- Automatic unlock after timeout
+- Security logging of all events
+
+---
+
+### Feature 16: Flexible File Format Options
+
+**Purpose:** Multiple encryption output formats for different use cases
+
+**Format Options:**
+
+**Combined Format (.enc):**
+
+```python
+def create_combined_format(encrypted_data, encrypted_key, metadata):
+    package = {
+        "format_version": "1.0",
+        "encryption_method": "AES-256-GCM + RSA-OAEP",
+        "metadata": metadata,
+        "encrypted_session_key": base64.b64encode(encrypted_key).decode(),
+        "encrypted_data": base64.b64encode(encrypted_data).decode(),
+        "integrity_hash": calculate_package_hash(encrypted_data, encrypted_key)
+    }
+
+    return json.dumps(package, indent=2).encode()
+```
+
+**Separate Format (.enc + .key):**
+
+```python
+def create_separate_format(encrypted_data, encrypted_key, metadata):
+    # .enc file - just the encrypted data
+    enc_file_content = encrypted_data
+
+    # .key file - session key and metadata
+    key_file_content = {
+        "format_version": "1.0",
+        "metadata": metadata,
+        "encrypted_session_key": base64.b64encode(encrypted_key).decode(),
+        "creation_timestamp": datetime.now().isoformat()
+    }
+
+    return enc_file_content, json.dumps(key_file_content, indent=2).encode()
+```
+
+**Auto-Detection:**
+
+```python
+def detect_file_format(file_path):
+    if file_path.endswith('.enc'):
+        # Check if corresponding .key file exists
+        key_file = file_path.replace('.enc', '.key')
+        if os.path.exists(key_file):
+            return "separate"
+        else:
+            # Try to parse as combined format
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                if 'encrypted_session_key' in data and 'encrypted_data' in data:
+                    return "combined"
+            except:
+                pass
+
+    return "unknown"
+```
+
+**Benefits:**
+
+- **Combined:** Single file, easier distribution
+- **Separate:** Better security, smaller encrypted payload
+- **Auto-detection:** Seamless user experience
+
+---
+
+### Feature 17: Account Recovery
+
+**Purpose:** Secure account access restoration using recovery codes
+
+**Recovery Code Generation:**
+
+```python
+def generate_recovery_code():
+    # Generate cryptographically secure recovery code
+    recovery_code = secrets.token_urlsafe(32)  # 43 characters, URL-safe
+
+    # Hash for storage (like passwords)
+    recovery_salt = secrets.token_hex(32)
+    recovery_hash = hashlib.sha256((recovery_code + recovery_salt).encode()).hexdigest()
+
+    return recovery_code, recovery_hash, recovery_salt
+```
+
+**Recovery Process:**
+
+```python
+def recover_account(email, recovery_code, new_passphrase):
+    # 1. Validate recovery code
+    user = get_user_by_email(email)
+    if not user or not user.recovery_code_hash:
+        raise RecoveryError("Invalid recovery code")
+
+    code_hash = hashlib.sha256((recovery_code + user.recovery_salt).encode()).hexdigest()
+    if code_hash != user.recovery_code_hash:
+        raise RecoveryError("Invalid recovery code")
+
+    # 2. Recovery code is valid - proceed with passphrase reset
+    # Note: This will invalidate existing private keys if they can't be decrypted
+    new_salt = secrets.token_hex(32)
+    new_password_hash = hashlib.sha256((new_passphrase + new_salt).encode()).hexdigest()
+
+    # 3. Update account (private keys will need regeneration)
+    update_user_credentials(user.id, new_password_hash, new_salt)
+
+    # 4. Invalidate recovery code (one-time use)
+    clear_recovery_code(user.id)
+
+    # 5. Force key regeneration on next login
+    invalidate_user_keys(user.id)
+
+    log_security_event("account_recovery", user.id, "Account recovered using recovery code")
+
+    return "Account recovered successfully. Please generate new encryption keys."
+```
+
+**Security Features:**
+
+- One-time use recovery codes
+- Recovery code displayed only once during registration
+- Automatic key invalidation after recovery
+- Comprehensive audit logging
+- Protection against recovery code enumeration
+
+**User Experience:**
+
+1. User forgot passphrase → Select "Account Recovery"
+2. Enter email and recovery code → System validation
+3. Set new passphrase → Account access restored
+4. Generate new encryption keys → Full functionality restored
+   description:
+   globs:
+   alwaysApply: false
+
+---

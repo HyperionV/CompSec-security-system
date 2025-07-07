@@ -1,0 +1,575 @@
+# Security Application - User Guide
+
+## Quick Start Guide
+
+### First Time Setup
+
+1. **Launch Application:** Run `python main.py`
+2. **Register Account:** Click "Register New Account"
+3. **Generate Keys:** Create RSA key pair after registration
+4. **Setup MFA:** Configure OTP/TOTP for enhanced security
+5. **Import Public Keys:** Add contacts' public keys for encryption
+
+### Daily Workflow
+
+1. **Login:** Email + Passphrase + MFA verification
+2. **File Operations:** Encrypt/decrypt files as needed
+3. **Digital Signatures:** Sign important documents
+4. **Key Management:** Monitor key status and renewal
+5. **Logout:** Secure session termination
+
+---
+
+## Detailed Step-by-Step Instructions
+
+### 1. User Registration Process
+
+**Step 1: Access Registration**
+
+- Launch the Security Application
+- Click "Register New Account" button on login screen
+- Registration dialog window opens
+
+**Step 2: Fill Personal Information**
+
+```
+Required Fields:
+- Email Address: your.email@example.com
+- Full Name: John Doe
+- Phone Number: +1-555-123-4567
+- Address: 123 Main St, City, State, ZIP
+- Date of Birth: MM/DD/YYYY
+```
+
+**Step 3: Create Secure Passphrase**
+
+```
+Passphrase Requirements:
+- Minimum 8 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one number
+- At least one special character (!@#$%^&*)
+```
+
+**Step 4: Save Recovery Code**
+
+- **CRITICAL:** Recovery code displays only once
+- Copy and store in secure location (password manager, safe)
+- Format: `AbC123XyZ789DefGhi456JklMno`
+- Required for account recovery if passphrase forgotten
+
+**Step 5: Complete Registration**
+
+- Click "Register" button
+- Account created successfully
+- Automatic login to main application
+
+---
+
+### 2. Multi-Factor Authentication (MFA)
+
+**Step 1: Standard Login**
+
+- Enter email address
+- Enter passphrase
+- Click "Login" button
+
+**Step 2: MFA Challenge**
+
+- System generates 6-digit OTP code
+- Code displayed in console (simulates email)
+- Code valid for 5 minutes only
+
+**Step 3: OTP Verification**
+
+- Enter 6-digit code in MFA dialog
+- Click "Verify" button
+- Successful verification grants full access
+
+**Alternative: TOTP Setup (Google Authenticator)**
+
+```
+Setup Process:
+1. Choose "Setup TOTP" option
+2. QR code displays on screen
+3. Scan QR with Google Authenticator app
+4. Enter 6-digit code from app
+5. TOTP successfully configured
+```
+
+**Failed Login Protection:**
+
+- Maximum 5 failed attempts
+- Account locks for 5 minutes after limit
+- Real-time countdown displayed
+- Automatic unlock after timeout
+
+---
+
+### 3. RSA Key Management
+
+**Step 1: Generate Initial Key Pair**
+
+- Navigate to "Key Management" tab
+- Click "Generate New Key Pair" button
+- System creates 2048-bit RSA keys
+- Private key encrypted with your passphrase
+
+**Step 2: View Key Status**
+
+```
+Key Information Display:
+- Creation Date: January 15, 2024
+- Expiration Date: April 15, 2024 (90 days)
+- Status: Valid / Expiring Soon / Expired
+- Days Remaining: 45 days
+```
+
+**Step 3: Key Status Monitoring**
+
+```
+Status Indicators:
+✅ Valid (0-83 days): Full functionality
+⚠️ Expiring Soon (84-90 days): Renewal recommended
+❌ Expired (>90 days): Renewal required
+```
+
+**Step 4: Key Renewal Process**
+
+- Click "Renew Keys" button
+- Enter current passphrase
+- New key pair generated automatically
+- Old keys archived securely
+
+**Step 5: Export Public Key**
+
+- Click "Export Public Key" button
+- Choose file location
+- Public key saved in PEM format
+- Share with contacts for encryption
+
+---
+
+### 4. QR Code Public Key Sharing
+
+**Step 1: Generate QR Code**
+
+- Navigate to "QR Operations" tab
+- Click "Generate QR Code" button
+- QR code created with your public key
+- File saved in `data/qr_codes/` directory
+
+**Step 2: Share QR Code**
+
+- QR code file: `{your_email}_{timestamp}.png`
+- Share image file with contacts
+- Contacts can scan to import your public key
+
+**Step 3: Import Public Key from QR**
+
+- Click "Import from QR Code" button
+- Select QR code image file
+- System decodes and validates key
+- Public key added to your contacts
+
+**QR Code Contents:**
+
+```json
+{
+  "email": "contact@example.com",
+  "created_at": "2024-01-15T10:30:00",
+  "public_key": "base64_encoded_public_key_data"
+}
+```
+
+---
+
+### 5. Account Information Updates
+
+**Step 1: Access Account Settings**
+
+- Navigate to "Account" tab
+- Current information displayed
+- Click "Edit Profile" button
+
+**Step 2: Update Personal Information**
+
+```
+Editable Fields:
+- Full Name
+- Phone Number
+- Address
+- Date of Birth
+```
+
+**Step 3: Change Passphrase (Advanced)**
+
+- Click "Change Passphrase" button
+- Enter current passphrase
+- Enter new passphrase (same requirements)
+- Confirm new passphrase
+
+**Critical Security Note:**
+
+- Changing passphrase re-encrypts private key
+- Process ensures no data loss
+- All existing encrypted files remain accessible
+
+---
+
+### 6. File Encryption
+
+**Step 1: Select File and Recipient**
+
+- Navigate to "File Operations" tab
+- Click "Encrypt File" button
+- Choose file to encrypt
+- Select recipient from public key list
+
+**Step 2: Choose Output Format**
+
+```
+Format Options:
+- Combined (.enc): Single file with embedded key
+- Separate (.enc + .key): File and key as separate files
+```
+
+**Step 3: Encryption Process**
+
+- System generates AES session key
+- File encrypted with AES-256-GCM
+- Session key encrypted with recipient's RSA public key
+- Metadata includes sender, timestamp, filename
+
+**Step 4: Save Encrypted File**
+
+- Choose output location
+- Encrypted file saved with chosen format
+- Original file remains unchanged
+
+**Large File Handling (>5MB):**
+
+- Automatic block processing (1MB blocks)
+- Progress indicator displayed
+- Each block encrypted separately
+- Integrity verification included
+
+---
+
+### 7. File Decryption
+
+**Step 1: Select Encrypted File**
+
+- Navigate to "File Operations" tab
+- Click "Decrypt File" button
+- Select encrypted file (.enc)
+- System auto-detects format (combined vs separate)
+
+**Step 2: Enter Passphrase**
+
+- Enter your passphrase
+- System decrypts your private key
+- Private key used to decrypt session key
+
+**Step 3: Decryption Process**
+
+- Session key decrypts file content
+- Metadata extracted and validated
+- Original filename and sender displayed
+
+**Step 4: Save Decrypted File**
+
+- Choose output location
+- Original filename suggested
+- File restored to original format
+- Decryption log entry created
+
+---
+
+### 8. Digital Signature Creation
+
+**Step 1: Select File to Sign**
+
+- Navigate to "Signature" tab
+- Click "Sign File" button
+- Choose file for digital signing
+
+**Step 2: Enter Passphrase**
+
+- Enter your passphrase
+- System decrypts your private key
+- Private key used for signing
+
+**Step 3: Signature Generation**
+
+- File hashed using SHA-256
+- Hash signed with RSA private key
+- Signature metadata created
+
+**Step 4: Save Signature File**
+
+- Signature saved as `{filename}.sig`
+- Contains signature and metadata
+- Original file remains unchanged
+
+**Signature File Contents:**
+
+```json
+{
+  "signature": "base64_encoded_signature",
+  "signer_email": "your.email@example.com",
+  "file_name": "document.pdf",
+  "timestamp": "2024-01-15T10:30:00",
+  "hash_algorithm": "SHA-256"
+}
+```
+
+---
+
+### 9. Digital Signature Verification
+
+**Step 1: Select Files**
+
+- Navigate to "Signature" tab
+- Click "Verify Signature" button
+- Select original file
+- Select corresponding .sig file
+
+**Step 2: Verification Process**
+
+- System calculates current file hash
+- Extracts signature from .sig file
+- Searches for signer's public key
+- Attempts verification with available keys
+
+**Step 3: Review Results**
+
+```
+Verification Outcomes:
+✅ Valid: "Signature valid - Signed by user@example.com on 2024-01-15"
+❌ Invalid: "Signature invalid - File may be modified"
+⚠️ Unknown: "Cannot verify - Signer's public key not found"
+```
+
+**Step 4: Take Action**
+
+- Valid signatures confirm authenticity
+- Invalid signatures indicate tampering
+- Unknown signatures require public key import
+
+---
+
+### 10. Public Key Search and Management
+
+**Step 1: Search for Public Keys**
+
+- Navigate to "Public Keys" tab
+- Enter email address in search box
+- Click "Search" button
+- Results display available keys
+
+**Step 2: View Search Results**
+
+```
+Result Information:
+- Email: contact@example.com
+- Owner Name: Jane Smith
+- Created: 2024-01-10
+- Status: Valid (80 days remaining)
+- QR Available: Yes
+- Can Encrypt: Yes
+```
+
+**Step 3: Manage Public Keys**
+
+```
+Available Actions:
+- View Key Details
+- Export to File
+- Generate QR Code
+- Remove from List
+- Refresh Status
+```
+
+**Step 4: Import New Public Keys**
+
+- Click "Import Public Key" button
+- Choose import method:
+  - From QR Code image
+  - From PEM file
+  - Manual paste
+
+---
+
+### 11. Admin Functions (Admin Users Only)
+
+**Step 1: Access Admin Panel**
+
+- Navigate to "Admin" tab (admin users only)
+- Admin dashboard displays
+- System overview and user management
+
+**Step 2: User Management**
+
+```
+Admin Capabilities:
+- View all user accounts
+- Lock/unlock user accounts
+- Change user roles
+- View user activity logs
+```
+
+**Step 3: System Monitoring**
+
+- View system-wide activity logs
+- Monitor security events
+- Track user authentication
+- Review encryption/decryption activities
+
+**Step 4: Account Administration**
+
+- Search users by email/name
+- View user account details
+- Modify user permissions
+- Manage account status
+
+---
+
+### 12. Security Logging and Monitoring
+
+**Step 1: View Personal Activity Logs**
+
+- Navigate to "Account" tab
+- Click "View Activity Log" button
+- Personal security events displayed
+
+**Step 2: Log Information**
+
+```
+Log Entry Details:
+- Timestamp: 2024-01-15 10:30:00
+- Action: File Encryption
+- Details: Encrypted document.pdf for user@example.com
+- Status: Success
+- IP Address: 192.168.1.100
+```
+
+**Step 3: Security Event Types**
+
+```
+Logged Activities:
+- Login attempts (success/failure)
+- MFA challenges and results
+- File encryption/decryption
+- Digital signature operations
+- Key generation/renewal
+- Profile updates
+- Admin actions
+```
+
+**Step 4: Security Monitoring**
+
+- Failed login tracking
+- Account lockout events
+- Suspicious activity detection
+- Key expiration alerts
+
+---
+
+## Troubleshooting Guide
+
+### Common Issues and Solutions
+
+**Login Problems:**
+
+```
+Issue: "Invalid credentials"
+Solution: Verify email and passphrase spelling, check caps lock
+
+Issue: "Account locked"
+Solution: Wait 5 minutes for automatic unlock
+
+Issue: "MFA code expired"
+Solution: Request new OTP code, complete within 5 minutes
+```
+
+**Key Management Issues:**
+
+```
+Issue: "Private key decryption failed"
+Solution: Verify passphrase is correct, check for recent changes
+
+Issue: "Key expired"
+Solution: Use key renewal function to generate new keys
+
+Issue: "Cannot encrypt for recipient"
+Solution: Import recipient's public key first
+```
+
+**File Operation Problems:**
+
+```
+Issue: "Decryption failed"
+Solution: Ensure correct private key and passphrase
+
+Issue: "Signature verification failed"
+Solution: Import signer's public key and retry
+
+Issue: "Large file processing slow"
+Solution: Normal behavior for files >5MB, wait for completion
+```
+
+**Recovery Procedures:**
+
+```
+Forgot Passphrase:
+1. Use account recovery option
+2. Enter email and recovery code
+3. Set new passphrase
+4. Generate new encryption keys
+
+Lost Recovery Code:
+- Contact system administrator
+- Account recovery may not be possible
+- Consider creating new account
+```
+
+---
+
+## Security Best Practices
+
+### Passphrase Security
+
+- Use unique, strong passphrases
+- Don't reuse passphrases from other systems
+- Consider using a password manager
+- Change passphrase if suspected compromise
+
+### Key Management
+
+- Monitor key expiration dates
+- Renew keys before expiration
+- Backup public keys securely
+- Don't share private keys or passphrases
+
+### File Security
+
+- Verify recipient identity before encryption
+- Verify signatures on received files
+- Keep original files secure
+- Use appropriate file format for use case
+
+### Recovery Preparation
+
+- Store recovery code in secure location
+- Test recovery process periodically
+- Keep multiple secure backup copies
+- Don't store recovery code digitally
+
+### General Security
+
+- Log out when session complete
+- Use MFA for all logins
+- Monitor activity logs regularly
+- Report suspicious activity immediately
