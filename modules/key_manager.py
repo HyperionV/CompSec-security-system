@@ -150,7 +150,7 @@ class KeyManager:
             salt = base64.b64decode(encrypted_data['salt'])
             nonce = base64.b64decode(encrypted_data['nonce'])
             ciphertext = base64.b64decode(encrypted_data['ciphertext'])
-            
+
             # Derive AES key using stored parameters
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
@@ -160,7 +160,9 @@ class KeyManager:
                 backend=default_backend()
             )
             aes_key = kdf.derive(passphrase.encode('utf-8'))
-            
+
+            print(f"DEBUG: Decrypt private key - salt_len={len(salt)}, nonce_len={len(nonce)}, ciphertext_len={len(ciphertext)}, aes_key_len={len(aes_key)}, iterations={encrypted_data['iterations']}")
+
             # Decrypt private key
             aesgcm = AESGCM(aes_key)
             private_key_der = aesgcm.decrypt(nonce, ciphertext, None)
@@ -183,8 +185,9 @@ class KeyManager:
             security_logger.log_activity(
                 action='private_key_decryption',
                 status='failure',
-                details=f'Private key decryption failed: {str(e)}'
+                details=f'Private key decryption failed: {type(e).__name__}: {str(e)}'
             )
+            print(f"DEBUG: Private key decryption failed in key_manager.py: {type(e).__name__}: {str(e)}")
             return False, f"Private key decryption failed: {str(e)}", None
     
     def create_user_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str, Optional[Dict]]:
@@ -251,6 +254,7 @@ class KeyManager:
         try:
             # Convert encrypted_private_key dict to JSON string for storage
             encrypted_key_json = json.dumps(encrypted_private_key)
+            print(f"DEBUG: Storing encrypted key JSON: {encrypted_key_json}")
             
             # Insert into keys table
             query = """
@@ -290,6 +294,7 @@ class KeyManager:
             key_data = result[0]
             
             # Parse encrypted private key JSON
+            print(f"DEBUG: Retrieved encrypted key data from DB: {key_data['encrypted_private_key']}")
             encrypted_private_key = json.loads(key_data['encrypted_private_key'])
             
             key_info = {

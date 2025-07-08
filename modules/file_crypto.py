@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.backends import default_backend
+from cryptography.exceptions import InvalidKey, InvalidTag
 
 from .database import db
 from .logger import security_logger
@@ -408,22 +409,56 @@ class FileCrypto:
                 return False, f"Failed to get private key: {message}", None
             
             # Decrypt private key
-            decrypt_success, decrypt_message, private_key = key_manager.decrypt_private_key(
-                key_data['encrypted_private_key'], passphrase
-            )
-            if not decrypt_success:
-                return False, f"Failed to decrypt private key: {decrypt_message}", None
-            
-            # Decrypt session key
-            session_key = private_key.decrypt(
-                encrypted_session_key,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None
+            try:
+                decrypt_success, decrypt_message, private_key = key_manager.decrypt_private_key(
+                    key_data['encrypted_private_key'], passphrase
                 )
-            )
-            
+                if not decrypt_success:
+                    return False, f"Failed to decrypt private key: {decrypt_message}", None
+            except InvalidKey as e:
+                security_logger.log_activity(
+                    user_id=user_id,
+                    action='private_key_decryption',
+                    status='failure',
+                    details=f'Invalid private key during decryption: {str(e)}'
+                )
+                return False, "Failed to decrypt private key: Invalid key or passphrase", None
+            except Exception as e:
+                security_logger.log_activity(
+                    user_id=user_id,
+                    action='private_key_decryption',
+                    status='failure',
+                    details=f'Unexpected error during private key decryption: {str(e)}'
+                )
+                return False, f"Failed to decrypt private key: {str(e)}", None
+
+            # Decrypt session key
+            try:
+                session_key = private_key.decrypt(
+                    encrypted_session_key,
+                    padding.OAEP(
+                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                        algorithm=hashes.SHA256(),
+                        label=None
+                    )
+                )
+            except InvalidKey as e:
+                security_logger.log_activity(
+                    user_id=user_id,
+                    action='session_key_decryption',
+                    status='failure',
+                    details=f'Invalid session key during decryption: {str(e)}'
+                )
+                return False, "Failed to decrypt session key: Invalid key or data", None
+            except Exception as e:
+                security_logger.log_activity(
+                    user_id=user_id,
+                    action='session_key_decryption',
+                    status='failure',
+                    details=f'Unexpected error during session key decryption: {str(e)}'
+                )
+                return False, f"Failed to decrypt session key: {str(e)}", None
+
             # Decrypt file content based on type
             if is_large_file:
                 # Large file block decryption
@@ -433,22 +468,71 @@ class FileCrypto:
                     status='info',
                     details='Large file format detected, using block processing'
                 )
-                
+
                 # Parse block data
                 block_data = ciphertext_data.encode('utf-8')
-                plaintext, block_info = self.decrypt_file_blocks(block_data, session_key)
-                
+                try:
+                    plaintext, block_info = self.decrypt_file_blocks(block_data, session_key)
+                except ValueError as e:
+                    security_logger.log_activity(
+                        user_id=user_id,
+                        action='large_file_decryption_block_error',
+                        status='failure',
+                        details=f'Block decryption failed: {str(e)}'
+                    )
+                    return False, f"Large file block decryption failed: {str(e)}", None
+                except InvalidTag as e:
+                    security_logger.log_activity(
+                        user_id=user_id,
+                        action='large_file_decryption_integrity_error',
+                        status='failure',
+                        details=f'Large file integrity check failed during block decryption: {str(e)}'
+                    )
+                    return False, "Large file integrity check failed: Data may be corrupted or tampered.", None
+                except Exception as e:
+                    security_logger.log_activity(
+                        user_id=user_id,
+                        action='large_file_decryption_unexpected_error',
+                        status='failure',
+                        details=f'Unexpected error during large file block decryption: {str(e)}'
+                    )
+                    return False, f"Large file block decryption failed: {str(e)}", None
             else:
                 # Regular file decryption
                 nonce = bytes.fromhex(nonce_hex)
                 ciphertext = bytes.fromhex(ciphertext_data)
-                
+
                 # Decrypt file content
                 aesgcm = AESGCM(session_key)
                 metadata_bytes = json.dumps(metadata).encode('utf-8')
-                
-                # Decrypt with metadata verification
-                plaintext = aesgcm.decrypt(nonce, ciphertext, metadata_bytes)
+
+                try:
+                    # Decrypt with metadata verification
+                    plaintext = aesgcm.decrypt(nonce, ciphertext, metadata_bytes)
+                except InvalidTag as e:
+                    security_logger.log_activity(
+                        user_id=user_id,
+                        action='file_decryption_integrity_error',
+                        status='failure',
+                        details=f'Regular file integrity check failed: {str(e)}'
+                    )
+                    return False, "File integrity check failed: Data may be corrupted or tampered.", None
+                except InvalidKey as e:
+                    security_logger.log_activity(
+                        user_id=user_id,
+                        action='file_decryption_invalid_key_error',
+                        status='failure',
+                        details=f'Invalid key for regular file decryption: {str(e)}'
+                    )
+                    return False, "File decryption failed: Invalid key.", None
+                except Exception as e:
+                    security_logger.log_activity(
+                        user_id=user_id,
+                        action='file_decryption_unexpected_error',
+                        status='failure',
+                        details=f'Unexpected error during regular file decryption: {str(e)}'
+                    )
+                    return False, f"File decryption failed: {str(e)}", None
             
             # Create output filename
             output_dir = Path(encrypted_file_path).parent / "decrypted"
@@ -484,8 +568,9 @@ class FileCrypto:
                 user_id=user_id,
                 action='file_decrypted',
                 status='failure',
-                details=f'Decryption failed: {str(e)}'
+                details=f'Decryption failed: {type(e).__name__}: {str(e)}'
             )
+            print(f"DEBUG: Decryption failed in file_crypto.py: {type(e).__name__}: {str(e)}")
             return False, f"Decryption failed: {str(e)}", None
 
 # Create global instance
