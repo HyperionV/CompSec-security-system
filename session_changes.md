@@ -2,6 +2,8 @@
 
 This section summarizes the key code modifications made and committed to the `dave-testing` branch compared to the `main` branch.
 
+**Note:** The first 7 core security functionalities are confirmed to be working as expected. Remaining functionalities are currently untested.
+
 ### 1. RSA Key Management Debugging
 - **Fixes:**
     - Addressed `error loading key status: 0` by reformatting dates in `gui/tabs/key_management_tab.py`.
