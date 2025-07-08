@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 from ..utils.dialogs import (show_error, show_info, show_warning, show_question, 
-                            get_open_file, get_save_file)
+                            get_open_file, get_save_file, PasswordDialog)
 
 class FileOperationWorker(QThread):
     progress_updated = pyqtSignal(str, int)
@@ -19,11 +19,11 @@ class FileOperationWorker(QThread):
     def run(self):
         try:
             if self.operation == 'encrypt':
-                success, message = self.file_crypto.encrypt_file_for_recipient(
+                success, message, _ = self.file_crypto.encrypt_file(
                     **self.kwargs
                 )
             elif self.operation == 'decrypt':
-                success, message = self.file_crypto.decrypt_file(
+                success, message, _ = self.file_crypto.decrypt_file(
                     **self.kwargs
                 )
             else:
@@ -222,10 +222,11 @@ class FileOperationsTab(QWidget):
         
         self.worker = FileOperationWorker(
             'encrypt', self.file_crypto,
-            input_file=input_file,
-            output_file=output_file,
+            file_path=input_file, # Changed input_file to file_path
             recipient_email=recipient_email,
-            sender_email=self.user_session.user_info['email']
+            sender_user_id=self.user_session.user_info['id'], # Changed sender_email to sender_user_id
+            output_format='combined' # Added output_format
+            # The output_file parameter is handled by file_crypto.encrypt_file internally.
         )
         self.worker.progress_updated.connect(self.update_progress)
         self.worker.operation_completed.connect(self.encryption_completed)
@@ -238,20 +239,30 @@ class FileOperationsTab(QWidget):
             show_warning(self, "No File Selected", "Please select an encrypted file to decrypt.")
             return
         
-        # Auto-generate output filename
-        if input_file.lower().endswith('.enc'):
-            suggested_output = input_file[:-4]  # Remove .enc extension
-        else:
-            suggested_output = input_file + '_decrypted'
+        # Auto-generate output filename - this is now handled internally by decrypt_file
+        # if input_file.lower().endswith('.enc'):
+        #     suggested_output = input_file[:-4]  # Remove .enc extension
+        # else:
+        #     suggested_output = input_file + '_decrypted'
         
-        # Get output location
-        output_file = get_save_file(self, "Save Decrypted File", "All Files (*)")
-        if not output_file:
+        # Get output location (no longer directly passed to worker, handled by file_crypto)
+        # output_file = get_save_file(self, "Save Decrypted File", "All Files (*)")
+        # if not output_file:
+        #     return
+        
+        # Prompt for passphrase for decryption
+        password_dialog = PasswordDialog("Decrypt File", "Enter your account passphrase:", self)
+        if password_dialog.exec_() != password_dialog.Accepted:
             return
         
+        passphrase = password_dialog.get_password()
+        if not passphrase:
+            show_error(self, "Error", "Passphrase is required.")
+            return
+
         # Confirm operation
         if not show_question(self, "Decrypt File", 
-                           f"Decrypt '{input_file}' to '{output_file}'?"):
+                           f"Decrypt '{input_file}'?"):
             return
         
         # Start decryption in background thread
@@ -259,9 +270,10 @@ class FileOperationsTab(QWidget):
         
         self.worker = FileOperationWorker(
             'decrypt', self.file_crypto,
-            input_file=input_file,
-            output_file=output_file,
-            user_email=self.user_session.user_info['email']
+            encrypted_file_path=input_file, # Use correct parameter name
+            user_id=self.user_session.user_info['id'],
+            passphrase=passphrase,
+            key_file_path=None # Assuming combined format for now, or add UI for separate
         )
         self.worker.progress_updated.connect(self.update_progress)
         self.worker.operation_completed.connect(self.decryption_completed)

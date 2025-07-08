@@ -368,6 +368,7 @@ class FileCrypto:
     def decrypt_file(self, encrypted_file_path: str, user_id: int, passphrase: str,
                     key_file_path: Optional[str] = None) -> Tuple[bool, str, Optional[Dict]]:
         """Decrypt a file using hybrid RSA+AES decryption with large file support"""
+        print(f"DEBUG: decrypt_file received: encrypted_file_path={encrypted_file_path}, user_id={user_id}, key_file_path={key_file_path}")
         try:
             # Load encrypted file
             if not os.path.exists(encrypted_file_path):

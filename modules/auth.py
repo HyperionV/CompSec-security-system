@@ -7,6 +7,7 @@ from typing import Dict, Tuple, Optional, Union
 from .database import DatabaseManager
 from .logger import SecurityLogger
 from .key_manager import KeyManager
+import json
 
 class AuthManager:
     def __init__(self):
@@ -467,30 +468,41 @@ class AuthManager:
             new_salt = self.generate_salt()
             new_password_hash = self.hash_password(new_password, new_salt)
             
-            # Check if user has keys that need re-encryption
-            key_success, key_msg, user_keys = self.db.get_user_keys_by_id(user_id)
+            # Get the user's most recent key record
+            key_record = self.db.get_user_keys_by_id(user_id)
             
-            if key_success and user_keys:
-                # Re-encrypt private keys with new passphrase
-                for key_record in user_keys:
-                    if key_record['status'] == 'valid':
-                        # Decrypt with old passphrase and re-encrypt with new
-                        old_encrypted_key = key_record['encrypted_private_key'].encode()
-                        decrypt_success, decrypt_msg, private_key = self.key_manager.decrypt_private_key(
-                            old_encrypted_key, current_password
-                        )
-                        
-                        if not decrypt_success:
-                            return False, f"Failed to decrypt existing keys: {decrypt_msg}"
-                        
-                        # Re-encrypt with new passphrase
-                        new_encrypted_key = self.key_manager.encrypt_private_key(private_key, new_password)
-                        
-                        # Update key in database
-                        update_key_query = "UPDATE user_keys SET encrypted_private_key = ? WHERE id = ?"
-                        self.db.execute_query(update_key_query, (new_encrypted_key.decode(), key_record['id']))
+            # If a key exists and is valid, re-encrypt it
+            if key_record and key_record['status'] in ['valid', 'expiring']:
+                # Decrypt with old passphrase and re-encrypt with new
+                old_encrypted_key_json = key_record['encrypted_private_key']
+                
+                try:
+                    encrypted_key_dict = json.loads(old_encrypted_key_json)
+                except json.JSONDecodeError:
+                    return False, "Failed to parse encrypted key data. Invalid format."
+
+                decrypt_success, decrypt_message, private_key_obj = self.key_manager.decrypt_private_key(
+                    encrypted_key_dict, current_password
+                )
+                
+                if not decrypt_success:
+                    return False, f"Failed to decrypt existing keys: {decrypt_message}"
+                
+                # Re-encrypt with new passphrase
+                encrypt_success, encrypt_message, new_encrypted_key_data = self.key_manager.encrypt_private_key(private_key_obj, new_password)
+
+                if not encrypt_success:
+                    return False, f"Failed to re-encrypt private key: {encrypt_message}"
+                
+                # Update key in database
+                update_success = self.db.update_key_encrypted_private_key(
+                    key_record['id'], json.dumps(new_encrypted_key_data)
+                )
+                
+                if not update_success:
+                    return False, f"Failed to update key in database for ID {key_record['id']}"
             
-            # Update user password
+            # Update user password in the database
             query = "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?"
             self.db.execute_query(query, (new_password_hash, new_salt, user_id))
             

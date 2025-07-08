@@ -101,11 +101,17 @@ class KeyManagementTab(QWidget):
                 return
             
             # Get the most recent key
-            latest_key = keys[0]  # Assuming keys are ordered by creation date
+            latest_key = keys # Direct assignment, as it's already a single dict or None
             
             # Check key status
             from datetime import datetime
-            expires_at = datetime.fromisoformat(latest_key['expires_at'])
+            
+            # Convert date strings from 'YYYY-MM-DD HH:MM:SS.ffffff' to 'YYYY-MM-DDTHH:MM:SS.ffffff' for fromisoformat
+            created_at_str = latest_key['created_at'].replace(' ', 'T')
+            expires_at_str = latest_key['expires_at'].replace(' ', 'T')
+
+            created_at = datetime.fromisoformat(created_at_str)
+            expires_at = datetime.fromisoformat(expires_at_str)
             now = datetime.now()
             days_until_expiry = (expires_at - now).days
             
@@ -131,12 +137,10 @@ class KeyManagementTab(QWidget):
             
             # Update key details
             details = f"Key ID: {latest_key['id']}\n"
-            details += f"Created: {latest_key['created_at'].split('T')[0]}\n"
-            details += f"Expires: {latest_key['expires_at'].split('T')[0]}\n"
+            details += f"Created: {created_at.strftime('%Y-%m-%d')}\n"
+            details += f"Expires: {expires_at.strftime('%Y-%m-%d')}\n"
             details += f"Status: {latest_key['status'].upper()}\n"
             details += f"Algorithm: RSA-2048"
-            
-            self.key_details.setText(details)
             
         except Exception as e:
             self.status_label.setText(f"Error loading key status: {str(e)}")

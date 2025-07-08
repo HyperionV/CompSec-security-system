@@ -26,7 +26,7 @@ class SecurityLogger:
             INSERT INTO activity_logs (user_id, action, status, details, ip_address)
             VALUES (?, ?, ?, ?, ?)
             """
-            db.execute_query(query, (user_id, action, status, details, ip_address))
+            db.execute_query(query, (user_id, action, status, str(details), ip_address)) # Explicitly cast details to str
         except Exception as e:
             self.logger.error(f"Failed to log to database: {e}")
         

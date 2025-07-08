@@ -253,6 +253,11 @@ class DatabaseManager:
         query = "UPDATE keys SET status = ? WHERE id = ?"
         return self.execute_query(query, (status, key_id))
     
+    def update_key_encrypted_private_key(self, key_id: int, encrypted_private_key_json: str) -> int:
+        """Update the encrypted private key for a given key ID"""
+        query = "UPDATE keys SET encrypted_private_key = ? WHERE id = ?"
+        return self.execute_query(query, (encrypted_private_key_json, key_id))
+
     def expire_user_keys(self, user_id):
         """Mark all user keys as expired"""
         query = "UPDATE keys SET status = 'expired' WHERE user_id = ? AND status IN ('valid', 'expiring')"

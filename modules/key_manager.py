@@ -177,7 +177,6 @@ class KeyManager:
                 status='success',
                 details='Private key decrypted successfully'
             )
-            
             return True, "Private key decrypted successfully", private_key
             
         except Exception as e:
