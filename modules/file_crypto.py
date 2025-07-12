@@ -20,6 +20,7 @@ from cryptography.exceptions import InvalidKey, InvalidTag
 
 from .database import db
 from .logger import security_logger
+from .auth import global_user_session
 
 class FileCrypto:
     def __init__(self):
@@ -49,7 +50,8 @@ class FileCrypto:
             user_id=0,
             action='large_file_encryption_start',
             status='info',
-            details=f'Starting block encryption: {total_blocks} blocks, {file_size} bytes'
+            details=f'Starting block encryption: {total_blocks} blocks, {file_size} bytes',
+            email=global_user_session.get_current_user_email()  # Use current user if logged in
         )
         
         encrypted_blocks = []
@@ -82,7 +84,8 @@ class FileCrypto:
                     user_id=0,
                     action='block_encrypted',
                     status='success',
-                    details=f'Block {block_num + 1}/{total_blocks} encrypted ({len(block_data)} bytes → {len(block_ciphertext)} bytes)'
+                    details=f'Block {block_num + 1}/{total_blocks} encrypted ({len(block_data)} bytes → {len(block_ciphertext)} bytes)',
+                    email=global_user_session.get_current_user_email()  # Use current user if logged in
                 )
         
         # Create block file header
@@ -107,7 +110,8 @@ class FileCrypto:
             user_id=0,
             action='large_file_encryption_complete',
             status='success',
-            details=f'Large file encrypted: {file_size} bytes → {encrypted_size} bytes (ratio: {encrypted_size/file_size:.2f}x)'
+            details=f'Large file encrypted: {file_size} bytes → {encrypted_size} bytes (ratio: {encrypted_size/file_size:.2f}x)',
+            email=global_user_session.get_current_user_email()  # Use current user if logged in
         )
         
         return header_json, block_header
@@ -132,7 +136,8 @@ class FileCrypto:
             user_id=0,
             action='large_file_decryption_start',
             status='info',
-            details=f'Starting block decryption: {total_blocks} blocks, {original_size} bytes expected'
+            details=f'Starting block decryption: {total_blocks} blocks, {original_size} bytes expected',
+            email=global_user_session.get_current_user_email()  # Use current user if logged in
         )
         
         # Decrypt blocks in order
@@ -158,7 +163,8 @@ class FileCrypto:
                     user_id=0,
                     action='block_decrypted',
                     status='success',
-                    details=f'Block {block_num + 1}/{total_blocks} decrypted ({len(block_ciphertext)} bytes → {len(block_plaintext)} bytes)'
+                    details=f'Block {block_num + 1}/{total_blocks} decrypted ({len(block_ciphertext)} bytes → {len(block_plaintext)} bytes)',
+                    email=global_user_session.get_current_user_email()  # Use current user if logged in
                 )
                 
             except Exception as e:
@@ -166,7 +172,8 @@ class FileCrypto:
                     user_id=0,
                     action='block_decrypted',
                     status='failure',
-                    details=f'Block {block_num} integrity check failed: {e}'
+                    details=f'Block {block_num} integrity check failed: {e}',
+                    email=global_user_session.get_current_user_email()  # Use current user if logged in
                 )
                 raise ValueError(f"Block {block_num} integrity verification failed: {e}")
         
@@ -178,7 +185,8 @@ class FileCrypto:
             user_id=0,
             action='large_file_decryption_complete',
             status='success',
-            details=f'Large file decrypted: {len(decrypted_data)} bytes restored'
+            details=f'Large file decrypted: {len(decrypted_data)} bytes restored',
+            email=global_user_session.get_current_user_email()  # Use current user if logged in
         )
         
         return decrypted_data, block_header
@@ -235,7 +243,8 @@ class FileCrypto:
                     user_id=sender_user_id,
                     action='file_encryption_large_detected',
                     status='info',
-                    details=f'Large file detected ({file_size} bytes), using block processing'
+                    details=f'Large file detected ({file_size} bytes), using block processing',
+                    email=sender_info['email']
                 )
                 
                 # Encrypt using block processing
@@ -352,17 +361,25 @@ class FileCrypto:
                 user_id=sender_user_id,
                 action='file_encrypted',
                 status='success',
-                details=f'{file_type.title()} {os.path.basename(file_path)} encrypted for {recipient_email}'
+                details=f'{file_type.title()} {os.path.basename(file_path)} encrypted for {recipient_email}',
+                email=sender_info['email']
             )
             
             return True, f"File encrypted successfully ({file_type})", result
             
         except Exception as e:
+            # Get sender email for logging even in exception case
+            try:
+                sender_email = db.get_user_email_by_id(sender_user_id)
+            except:
+                sender_email = None
+                
             security_logger.log_activity(
                 user_id=sender_user_id,
                 action='file_encrypted',
                 status='failure',
-                details=f'Encryption failed: {str(e)}'
+                details=f'Encryption failed: {str(e)}',
+                email=sender_email
             )
             return False, f"Encryption failed: {str(e)}", None
     
@@ -416,19 +433,33 @@ class FileCrypto:
                 if not decrypt_success:
                     return False, f"Failed to decrypt private key: {decrypt_message}", None
             except InvalidKey as e:
+                # Get user email for logging
+                try:
+                    user_email = db.get_user_email_by_id(user_id)
+                except:
+                    user_email = None
+                    
                 security_logger.log_activity(
                     user_id=user_id,
                     action='private_key_decryption',
                     status='failure',
-                    details=f'Invalid private key during decryption: {str(e)}'
+                    details=f'Invalid private key during decryption: {str(e)}',
+                    email=user_email
                 )
                 return False, "Failed to decrypt private key: Invalid key or passphrase", None
             except Exception as e:
+                # Get user email for logging
+                try:
+                    user_email = db.get_user_email_by_id(user_id)
+                except:
+                    user_email = None
+                    
                 security_logger.log_activity(
                     user_id=user_id,
                     action='private_key_decryption',
                     status='failure',
-                    details=f'Unexpected error during private key decryption: {str(e)}'
+                    details=f'Unexpected error during private key decryption: {str(e)}',
+                    email=user_email
                 )
                 return False, f"Failed to decrypt private key: {str(e)}", None
 
@@ -443,30 +474,51 @@ class FileCrypto:
                     )
                 )
             except InvalidKey as e:
+                # Get user email for logging
+                try:
+                    user_email = db.get_user_email_by_id(user_id)
+                except:
+                    user_email = None
+                    
                 security_logger.log_activity(
                     user_id=user_id,
                     action='session_key_decryption',
                     status='failure',
-                    details=f'Invalid session key during decryption: {str(e)}'
+                    details=f'Invalid session key during decryption: {str(e)}',
+                    email=user_email
                 )
                 return False, "Failed to decrypt session key: Invalid key or data", None
             except Exception as e:
+                # Get user email for logging
+                try:
+                    user_email = db.get_user_email_by_id(user_id)
+                except:
+                    user_email = None
+                    
                 security_logger.log_activity(
                     user_id=user_id,
                     action='session_key_decryption',
                     status='failure',
-                    details=f'Unexpected error during session key decryption: {str(e)}'
+                    details=f'Unexpected error during session key decryption: {str(e)}',
+                    email=user_email
                 )
                 return False, f"Failed to decrypt session key: {str(e)}", None
 
             # Decrypt file content based on type
             if is_large_file:
                 # Large file block decryption
+                # Get user email for logging
+                try:
+                    user_email = db.get_user_email_by_id(user_id)
+                except:
+                    user_email = None
+                    
                 security_logger.log_activity(
                     user_id=user_id,
                     action='file_decryption_large_detected',
                     status='info',
-                    details='Large file format detected, using block processing'
+                    details='Large file format detected, using block processing',
+                    email=user_email
                 )
 
                 # Parse block data
@@ -478,7 +530,8 @@ class FileCrypto:
                         user_id=user_id,
                         action='large_file_decryption_block_error',
                         status='failure',
-                        details=f'Block decryption failed: {str(e)}'
+                        details=f'Block decryption failed: {str(e)}',
+                        email=user_email
                     )
                     return False, f"Large file block decryption failed: {str(e)}", None
                 except InvalidTag as e:
@@ -486,7 +539,8 @@ class FileCrypto:
                         user_id=user_id,
                         action='large_file_decryption_integrity_error',
                         status='failure',
-                        details=f'Large file integrity check failed during block decryption: {str(e)}'
+                        details=f'Large file integrity check failed during block decryption: {str(e)}',
+                        email=user_email
                     )
                     return False, "Large file integrity check failed: Data may be corrupted or tampered.", None
                 except Exception as e:
@@ -494,7 +548,8 @@ class FileCrypto:
                         user_id=user_id,
                         action='large_file_decryption_unexpected_error',
                         status='failure',
-                        details=f'Unexpected error during large file block decryption: {str(e)}'
+                        details=f'Unexpected error during large file block decryption: {str(e)}',
+                        email=user_email
                     )
                     return False, f"Large file block decryption failed: {str(e)}", None
             else:
@@ -510,27 +565,48 @@ class FileCrypto:
                     # Decrypt with metadata verification
                     plaintext = aesgcm.decrypt(nonce, ciphertext, metadata_bytes)
                 except InvalidTag as e:
+                    # Get user email for logging
+                    try:
+                        user_email = db.get_user_email_by_id(user_id)
+                    except:
+                        user_email = None
+                        
                     security_logger.log_activity(
                         user_id=user_id,
                         action='file_decryption_integrity_error',
                         status='failure',
-                        details=f'Regular file integrity check failed: {str(e)}'
+                        details=f'Regular file integrity check failed: {str(e)}',
+                        email=user_email
                     )
                     return False, "File integrity check failed: Data may be corrupted or tampered.", None
                 except InvalidKey as e:
+                    # Get user email for logging
+                    try:
+                        user_email = db.get_user_email_by_id(user_id)
+                    except:
+                        user_email = None
+                        
                     security_logger.log_activity(
                         user_id=user_id,
                         action='file_decryption_invalid_key_error',
                         status='failure',
-                        details=f'Invalid key for regular file decryption: {str(e)}'
+                        details=f'Invalid key for regular file decryption: {str(e)}',
+                        email=user_email
                     )
                     return False, "File decryption failed: Invalid key.", None
                 except Exception as e:
+                    # Get user email for logging
+                    try:
+                        user_email = db.get_user_email_by_id(user_id)
+                    except:
+                        user_email = None
+                        
                     security_logger.log_activity(
                         user_id=user_id,
                         action='file_decryption_unexpected_error',
                         status='failure',
-                        details=f'Unexpected error during regular file decryption: {str(e)}'
+                        details=f'Unexpected error during regular file decryption: {str(e)}',
+                        email=user_email
                     )
                     return False, f"File decryption failed: {str(e)}", None
             
@@ -554,21 +630,36 @@ class FileCrypto:
             
             # Log successful decryption
             file_type = "large file" if is_large_file else "regular file"
+            
+            # Get user email for logging
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='file_decrypted',
                 status='success',
-                details=f'{file_type.title()} {metadata["original_filename"]} decrypted from {metadata["sender_email"]}'
+                details=f'{file_type.title()} {metadata["original_filename"]} decrypted from {metadata["sender_email"]}',
+                email=user_email
             )
             
             return True, f"File decrypted successfully ({file_type})", result
             
         except Exception as e:
+            # Get user email for logging
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='file_decrypted',
                 status='failure',
-                details=f'Decryption failed: {type(e).__name__}: {str(e)}'
+                details=f'Decryption failed: {type(e).__name__}: {str(e)}',
+                email=user_email
             )
             print(f"DEBUG: Decryption failed in file_crypto.py: {type(e).__name__}: {str(e)}")
             return False, f"Decryption failed: {str(e)}", None

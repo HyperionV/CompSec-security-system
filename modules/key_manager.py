@@ -46,7 +46,7 @@ class KeyManager:
         self.nonce_length = 12   # 96 bits for GCM
         self.salt_length = 16    # 128 bits
     
-    def generate_rsa_keypair(self) -> Tuple[bool, str, Optional[Dict]]:
+    def generate_rsa_keypair(self, user_email=None) -> Tuple[bool, str, Optional[Dict]]:
         """Generate 2048-bit RSA key pair with proper entropy"""
         try:
             # Generate RSA private key using cryptographically secure entropy
@@ -76,7 +76,8 @@ class KeyManager:
             security_logger.log_activity(
                 action='rsa_keypair_generation',
                 status='success',
-                details=f'Generated {self.key_size}-bit RSA key pair'
+                details=f'Generated {self.key_size}-bit RSA key pair',
+                email=user_email
             )
             
             return True, "RSA key pair generated successfully", result
@@ -85,11 +86,12 @@ class KeyManager:
             security_logger.log_activity(
                 action='rsa_keypair_generation',
                 status='failure',
-                details=f'Key generation failed: {str(e)}'
+                details=f'Key generation failed: {str(e)}',
+                email=user_email
             )
             return False, f"Key generation failed: {str(e)}", None
     
-    def encrypt_private_key(self, private_key, passphrase: str) -> Tuple[bool, str, Optional[Dict]]:
+    def encrypt_private_key(self, private_key, passphrase: str, user_email=None) -> Tuple[bool, str, Optional[Dict]]:
         """Encrypt private key using AES-256-GCM with PBKDF2-derived key"""
         try:
             # Generate random salt and nonce
@@ -130,7 +132,8 @@ class KeyManager:
             security_logger.log_activity(
                 action='private_key_encryption',
                 status='success',
-                details='Private key encrypted with AES-256-GCM'
+                details='Private key encrypted with AES-256-GCM',
+                email=user_email
             )
             
             return True, "Private key encrypted successfully", encrypted_data
@@ -139,7 +142,8 @@ class KeyManager:
             security_logger.log_activity(
                 action='private_key_encryption',
                 status='failure',
-                details=f'Private key encryption failed: {str(e)}'
+                details=f'Private key encryption failed: {str(e)}',
+                email=user_email
             )
             return False, f"Private key encryption failed: {str(e)}", None
     
@@ -180,18 +184,34 @@ class KeyManager:
                 backend=default_backend()
             )
             
+            # Lazy import to avoid circular dependency
+            try:
+                from .auth import global_user_session
+                user_email = global_user_session.get_current_user_email()
+            except ImportError:
+                user_email = None
+            
             security_logger.log_activity(
                 action='private_key_decryption',
                 status='success',
-                details='Private key decrypted successfully'
+                details='Private key decrypted successfully',
+                email=user_email
             )
             return True, "Private key decrypted successfully", private_key
             
         except Exception as e:
+            # Lazy import to avoid circular dependency
+            try:
+                from .auth import global_user_session
+                user_email = global_user_session.get_current_user_email()
+            except ImportError:
+                user_email = None
+            
             security_logger.log_activity(
                 action='private_key_decryption',
                 status='failure',
-                details=f'Private key decryption failed: {type(e).__name__}: {str(e)}'
+                details=f'Private key decryption failed: {type(e).__name__}: {str(e)}',
+                email=user_email
             )
             print(f"DEBUG: Private key decryption failed in key_manager.py: {type(e).__name__}: {str(e)}")
             return False, f"Private key decryption failed: {str(e)}", None
@@ -199,14 +219,17 @@ class KeyManager:
     def create_user_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str, Optional[Dict]]:
         """Create and store RSA key pair for user"""
         try:
+            # Get user email for logging
+            user_email = db.get_user_email_by_id(user_id)
+            
             # Generate key pair
-            success, message, keypair_data = self.generate_rsa_keypair()
+            success, message, keypair_data = self.generate_rsa_keypair(user_email)
             if not success:
                 return False, message, None
             
             # Encrypt private key
             encrypt_success, encrypt_message, encrypted_data = self.encrypt_private_key(
-                keypair_data['private_key'], passphrase
+                keypair_data['private_key'], passphrase, user_email
             )
             if not encrypt_success:
                 return False, encrypt_message, None
@@ -239,17 +262,25 @@ class KeyManager:
                 user_id=user_id,
                 action='user_keys_created',
                 status='success',
-                details=f'RSA key pair created, expires: {expires_at.strftime("%Y-%m-%d")}'
+                details=f'RSA key pair created, expires: {expires_at.strftime("%Y-%m-%d")}',
+                email=user_email
             )
             
             return True, "User keys created successfully", result
             
         except Exception as e:
+            # Try to get user email even in exception case
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='user_keys_created',
                 status='failure',
-                details=f'Key creation failed: {str(e)}'
+                details=f'Key creation failed: {str(e)}',
+                email=user_email
             )
             return False, f"Key creation failed: {str(e)}", None
     
@@ -315,18 +346,30 @@ class KeyManager:
             return True, "Keys retrieved successfully", key_info
             
         except Exception as e:
+            # Try to get user email for logging
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='get_user_keys',
                 status='failure',
-                details=f'Key retrieval failed: {str(e)}'
+                details=f'Key retrieval failed: {str(e)}',
+                email=user_email
             )
             return False, f"Key retrieval failed: {str(e)}", None
     
     def check_key_status(self, user_id: int) -> Tuple[bool, str, Optional[Dict]]:
-        """Check key expiration status and update if needed"""
+        """Check the status of user's RSA keys"""
         try:
+            # Get user email for logging
+            user_email = db.get_user_email_by_id(user_id)
+            
+            # Get user's current keys
             success, message, key_data = self.get_user_keys(user_id)
+            
             if not success:
                 return False, message, None
             
@@ -365,11 +408,18 @@ class KeyManager:
             return True, status_message, result
             
         except Exception as e:
+            # Try to get user email even in exception case
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='check_key_status',
                 status='failure',
-                details=f'Key status check failed: {str(e)}'
+                details=f'Key status check failed: {str(e)}',
+                email=user_email
             )
             return False, f"Key status check failed: {str(e)}", None
     
@@ -383,13 +433,17 @@ class KeyManager:
             security_logger.log_activity(
                 action='update_key_status',
                 status='failure',
-                details=f'Key status update failed: {str(e)}'
+                details=f'Key status update failed: {str(e)}',
+                email=None  # System operation
             )
             return False
     
     def renew_user_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str, Optional[Dict]]:
         """Generate new keys for user and mark old ones as expired"""
         try:
+            # Get user email for logging
+            user_email = db.get_user_email_by_id(user_id)
+            
             # Mark existing keys as expired
             query = "UPDATE keys SET status = 'expired' WHERE user_id = ? AND status IN ('valid', 'expiring')"
             db.execute_query(query, (user_id,))
@@ -402,17 +456,25 @@ class KeyManager:
                     user_id=user_id,
                     action='key_renewal',
                     status='success',
-                    details='RSA keys renewed successfully'
+                    details='RSA keys renewed successfully',
+                    email=user_email
                 )
             
             return success, message, key_data
             
         except Exception as e:
+            # Try to get user email even in exception case
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='key_renewal',
                 status='failure',
-                details=f'Key renewal failed: {str(e)}'
+                details=f'Key renewal failed: {str(e)}',
+                email=user_email
             )
             return False, f"Key renewal failed: {str(e)}", None
     
@@ -485,7 +547,7 @@ class KeyManager:
             # Look up the user and their latest valid/expiring key
             user_record = db.get_user_by_email(user_email.lower().strip())
             if not user_record:
-                security_logger.log_activity(action="get_private_key", status="failure", details=f"User not found: {user_email}")
+                security_logger.log_activity(action="get_private_key", status="failure", details=f"User not found: {user_email}", email=user_email)
                 return None
 
             user_id = user_record['id']
@@ -500,7 +562,7 @@ class KeyManager:
             """
             key_records = db.execute_query(query, (user_id,), fetch=True)
             if not key_records or len(key_records) == 0:
-                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details="No valid key record found")
+                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details="No valid key record found", email=user_email)
                 return None
                 
             key_record = key_records[0]
@@ -510,20 +572,20 @@ class KeyManager:
             try:
                 encrypted_data = json.loads(key_record['encrypted_private_key'])
             except Exception as e:
-                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details=f"Invalid encrypted key JSON: {str(e)}")
+                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details=f"Invalid encrypted key JSON: {str(e)}", email=user_email)
                 return None
 
             # Decrypt the private key
             decrypt_success, decrypt_message, private_key_obj = self.decrypt_private_key(encrypted_data, passphrase)
             if not decrypt_success or not private_key_obj:
-                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details=f"Private key decryption failed: {decrypt_message}")
+                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details=f"Private key decryption failed: {decrypt_message}", email=user_email)
                 return None
 
-            security_logger.log_activity(user_id=user_id, action="get_private_key", status="success", details="Private key retrieved and decrypted")
+            security_logger.log_activity(user_id=user_id, action="get_private_key", status="success", details="Private key retrieved and decrypted", email=user_email)
             return private_key_obj
 
         except Exception as e:
-            security_logger.log_activity(action="get_private_key", status="error", details=f"Unexpected error: {type(e).__name__}: {str(e)}")
+            security_logger.log_activity(action="get_private_key", status="error", details=f"Unexpected error: {type(e).__name__}: {str(e)}", email=user_email)
             return None
 
 # Create global instance

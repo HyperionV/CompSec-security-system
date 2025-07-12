@@ -78,7 +78,8 @@ class QRCodeHandler:
                 security_logger.log_activity(
                     action='qr_code_generated',
                     status='success',
-                    details=f'QR code saved to {filepath}'
+                    details=f'QR code saved to {filepath}',
+                    email=None  # Generic QR code generation, no user context
                 )
             
             return True, result
@@ -87,7 +88,8 @@ class QRCodeHandler:
             security_logger.log_activity(
                 action='qr_code_generated',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=None  # Generic QR code generation, no user context
             )
             return False, str(e)
     
@@ -107,7 +109,8 @@ class QRCodeHandler:
                 security_logger.log_activity(
                     action='qr_code_read',
                     status='success',
-                    details=f'QR code read from {image_path}'
+                    details=f'QR code read from {image_path}',
+                    email=None  # Generic QR code reading, no user context
                 )
                 
                 return True, qr_data
@@ -115,7 +118,8 @@ class QRCodeHandler:
                 security_logger.log_activity(
                     action='qr_code_read',
                     status='failure',
-                    details=f'No QR code found in {image_path}'
+                    details=f'No QR code found in {image_path}',
+                    email=None  # Generic QR code reading, no user context
                 )
                 return False, "No QR code found in image"
                 
@@ -123,7 +127,8 @@ class QRCodeHandler:
             security_logger.log_activity(
                 action='qr_code_read',
                 status='failure',
-                details=f'Exception reading {image_path}: {str(e)}'
+                details=f'Exception reading {image_path}: {str(e)}',
+                email=None  # Generic QR code reading, no user context
             )
             return False, str(e)
     
@@ -152,7 +157,8 @@ class QRCodeHandler:
                 security_logger.log_activity(
                     action='public_key_qr_generated',
                     status='success',
-                    details=f'Public key QR code generated for {email}'
+                    details=f'Public key QR code generated for {email}',
+                    email=email
                 )
             
             return success, result
@@ -161,7 +167,8 @@ class QRCodeHandler:
             security_logger.log_activity(
                 action='public_key_qr_generated',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=email if 'email' in locals() else None
             )
             return False, str(e)
     
@@ -196,7 +203,8 @@ class QRCodeHandler:
             security_logger.log_activity(
                 action='public_key_qr_read',
                 status='success',
-                details=f'Public key QR code read for {email}'
+                details=f'Public key QR code read for {email}',
+                email=email
             )
             
             return True, result
@@ -205,7 +213,8 @@ class QRCodeHandler:
             security_logger.log_activity(
                 action='public_key_qr_read',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=None  # No user context available in exception
             )
             return False, str(e)
     
@@ -251,7 +260,8 @@ class QRCodeHandler:
                     user_id=user_id,
                     action='public_key_qr_generated',
                     status='success',
-                    details=f'Generated QR code for own public key'
+                    details=f'Generated QR code for own public key',
+                    email=email
                 )
             
             return success, result
@@ -261,7 +271,8 @@ class QRCodeHandler:
                 user_id=user_id,
                 action='public_key_qr_generated',
                 status='failure',
-                details=f'Failed to generate QR code: {str(e)}'
+                details=f'Failed to generate QR code: {str(e)}',
+                email=email
             )
             return False, str(e)
     
@@ -270,6 +281,9 @@ class QRCodeHandler:
         from .database import db
         
         try:
+            # Get user email for logging
+            user_email = db.get_user_email_by_id(user_id)
+            
             # Read QR code
             success, qr_result = self.read_public_key_qr(image_path)
             if not success:
@@ -288,7 +302,8 @@ class QRCodeHandler:
                     user_id=user_id,
                     action='public_key_imported',
                     status='success',
-                    details=f'Imported public key for {owner_email} from QR code'
+                    details=f'Imported public key for {owner_email} from QR code',
+                    email=user_email
                 )
                 
                 result = {
@@ -302,11 +317,18 @@ class QRCodeHandler:
                 return False, "Failed to store public key in database"
             
         except Exception as e:
+            # Try to get user email even in exception case
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='public_key_imported',
                 status='failure',
-                details=f'Failed to import public key: {str(e)}'
+                details=f'Failed to import public key: {str(e)}',
+                email=user_email
             )
             return False, str(e)
 

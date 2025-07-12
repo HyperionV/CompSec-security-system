@@ -35,16 +35,29 @@ class MainWindow(QMainWindow):
     
     def add_mfa_screen(self, screen):
         """Add MFA screen to stack"""
+        # Remove old MFA screen if it exists
+        if self.mfa_screen and self.stacked_widget.indexOf(self.mfa_screen) != -1:
+            self.stacked_widget.removeWidget(self.mfa_screen)
+            self.mfa_screen.deleteLater()
+        
         self.mfa_screen = screen
         self.stacked_widget.addWidget(screen)
     
     def add_main_app_screen(self, screen):
         """Add main application screen to stack"""
+        # Remove old main app screen if it exists
+        if self.main_app_screen and self.stacked_widget.indexOf(self.main_app_screen) != -1:
+            self.stacked_widget.removeWidget(self.main_app_screen)
+            self.main_app_screen.deleteLater()
+        
         self.main_app_screen = screen
         self.stacked_widget.addWidget(screen)
     
     def show_login_screen(self):
         """Show login/register screen"""
+        # Clear login form when returning to login
+        if self.login_screen and hasattr(self.login_screen, 'reset_for_new_session'):
+            self.login_screen.reset_for_new_session()
         self.stacked_widget.setCurrentIndex(self.LOGIN_SCREEN)
     
     def show_mfa_screen(self):
@@ -54,6 +67,20 @@ class MainWindow(QMainWindow):
     def show_main_app_screen(self):
         """Show main application screen"""
         self.stacked_widget.setCurrentIndex(self.MAIN_APP_SCREEN)
+    
+    def cleanup_screens(self):
+        """Clean up all screens when switching users"""
+        # Remove MFA screen
+        if self.mfa_screen and self.stacked_widget.indexOf(self.mfa_screen) != -1:
+            self.stacked_widget.removeWidget(self.mfa_screen)
+            self.mfa_screen.deleteLater()
+            self.mfa_screen = None
+        
+        # Remove main app screen
+        if self.main_app_screen and self.stacked_widget.indexOf(self.main_app_screen) != -1:
+            self.stacked_widget.removeWidget(self.main_app_screen)
+            self.main_app_screen.deleteLater()
+            self.main_app_screen = None
     
     def closeEvent(self, event):
         """Handle application close"""

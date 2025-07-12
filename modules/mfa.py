@@ -9,6 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from .database import db
 from .logger import security_logger
+from .auth import global_user_session
 
 class MFAManager:
     def __init__(self):
@@ -34,7 +35,8 @@ class MFAManager:
         security_logger.log_activity(
             action='smtp_configured',
             status='success',
-            details=f'SMTP configured for {server}:{port}'
+            details=f'SMTP configured for {server}:{port}',
+            email=None  # System configuration, not user-specific
         )
     
     def send_otp_email(self, user_email, otp_code, expires_at):
@@ -62,8 +64,6 @@ Valid for {self.otp_expiry_minutes} minutes from generation.
 
 Do not share this code with anyone.
 
-Best regards,
-SecurityApp Team
             """
             
             msg.attach(MIMEText(body, 'plain'))
@@ -77,7 +77,8 @@ SecurityApp Team
             security_logger.log_activity(
                 action='otp_email_sent',
                 status='success',
-                details=f'Real email sent to {user_email}'
+                details=f'Real email sent to {user_email}',
+                email=user_email
             )
             return True, "OTP sent to your email address"
             
@@ -85,7 +86,8 @@ SecurityApp Team
             security_logger.log_activity(
                 action='otp_email_sent',
                 status='failure',
-                details=f'SMTP error: {str(e)}'
+                details=f'SMTP error: {str(e)}',
+                email=user_email
             )
             # Fallback to simulation if SMTP fails
             return self._simulate_email(user_email, otp_code, expires_at)
@@ -122,11 +124,20 @@ SecurityApp Team
                 return False, f"Failed to send OTP: {email_message}"
                 
         except Exception as e:
+            # Try to get user email for logging
+            try:
+                user_query = "SELECT email FROM users WHERE id = ?"
+                user_result = db.execute_query(user_query, (user_id,), fetch=True)
+                user_email = user_result[0]['email'] if user_result else None
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='send_otp',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=user_email
             )
             return False, f"OTP sending failed: {str(e)}"
     
@@ -164,11 +175,20 @@ SecurityApp Team
                 return False, f"Failed to send OTP: {email_message}", None
                 
         except Exception as e:
+            # Try to get user email for logging
+            try:
+                user_query = "SELECT email FROM users WHERE id = ?"
+                user_result = db.execute_query(user_query, (user_id,), fetch=True)
+                user_email = user_result[0]['email'] if user_result else None
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='generate_otp',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=user_email
             )
             return False, f"OTP generation failed: {str(e)}", None
     
@@ -183,6 +203,11 @@ SecurityApp Team
     def create_otp(self, user_id):
         """Create and store OTP code for user"""
         try:
+            # Get user email first for logging
+            user_query = "SELECT email FROM users WHERE id = ?"
+            user_result = db.execute_query(user_query, (user_id,), fetch=True)
+            user_email = user_result[0]['email'] if user_result else None
+            
             # Generate OTP code
             otp_code = self.generate_otp_code()
             expires_at = datetime.now() + timedelta(minutes=self.otp_expiry_minutes)
@@ -208,7 +233,8 @@ SecurityApp Team
                     user_id=user_id,
                     action='otp_generated',
                     status='success',
-                    details=f'OTP expires at {expires_at}'
+                    details=f'OTP expires at {expires_at}',
+                    email=user_email
                 )
                 return True, otp_code, expires_at
             else:
@@ -216,16 +242,26 @@ SecurityApp Team
                     user_id=user_id,
                     action='otp_generated',
                     status='failure',
-                    details='Database insertion failed'
+                    details='Database insertion failed',
+                    email=user_email
                 )
                 return False, None, None
                 
         except Exception as e:
+            # Try to get user email for logging even in exception case
+            try:
+                user_query = "SELECT email FROM users WHERE id = ?"
+                user_result = db.execute_query(user_query, (user_id,), fetch=True)
+                user_email = user_result[0]['email'] if user_result else None
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='otp_generated',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=user_email
             )
             print(f"DEBUG: Exception in create_otp: {str(e)}")
             return False, None, None
@@ -233,6 +269,11 @@ SecurityApp Team
     def verify_otp(self, user_id, otp_code):
         """Verify OTP code for user"""
         try:
+            # Get user email first for logging
+            user_query = "SELECT email FROM users WHERE id = ?"
+            user_result = db.execute_query(user_query, (user_id,), fetch=True)
+            user_email = user_result[0]['email'] if user_result else None
+            
             # Debug: First check all OTP codes for this user
             debug_query = "SELECT * FROM otp_codes WHERE user_id = ?"
             debug_results = db.execute_query(debug_query, (user_id,), fetch=True)
@@ -260,7 +301,8 @@ SecurityApp Team
                     user_id=user_id,
                     action='otp_verification',
                     status='failure',
-                    details='No valid OTP codes found'
+                    details='No valid OTP codes found',
+                    email=user_email
                 )
                 return False, "No valid OTP code found or code expired"
             
@@ -277,7 +319,8 @@ SecurityApp Team
                         user_id=user_id,
                         action='otp_verification',
                         status='success',
-                        details='OTP verified successfully'
+                        details='OTP verified successfully',
+                        email=user_email
                     )
                     return True, "OTP verified successfully"
             
@@ -286,16 +329,26 @@ SecurityApp Team
                 user_id=user_id,
                 action='otp_verification',
                 status='failure',
-                details=f'Invalid OTP code provided: {otp_code}'
+                details=f'Invalid OTP code provided: {otp_code}',
+                email=user_email
             )
             return False, "Invalid OTP code"
             
         except Exception as e:
+            # Try to get user email for logging even in exception case
+            try:
+                user_query = "SELECT email FROM users WHERE id = ?"
+                user_result = db.execute_query(user_query, (user_id,), fetch=True)
+                user_email = user_result[0]['email'] if user_result else None
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='otp_verification',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=user_email
             )
             print(f"DEBUG: Exception in verify_otp: {str(e)}")
             return False, f"OTP verification failed: {str(e)}"
@@ -336,7 +389,8 @@ SecurityApp Team
             security_logger.log_activity(
                 action='totp_setup',
                 status='success',
-                details=f'TOTP setup for {user_email}'
+                details=f'TOTP setup for {user_email}',
+                email=user_email
             )
             
             return True, {
@@ -350,7 +404,8 @@ SecurityApp Team
             security_logger.log_activity(
                 action='totp_setup',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=user_email
             )
             return False, f"TOTP setup failed: {str(e)}"
     
@@ -366,14 +421,16 @@ SecurityApp Team
                 security_logger.log_activity(
                     action='totp_verification',
                     status='success',
-                    details='TOTP token verified'
+                    details='TOTP token verified',
+                    email=global_user_session.get_current_user_email()
                 )
                 return True, "TOTP token verified successfully"
             else:
                 security_logger.log_activity(
                     action='totp_verification',
                     status='failure',
-                    details=f'Invalid TOTP token: {token}'
+                    details=f'Invalid TOTP token: {token}',
+                    email=global_user_session.get_current_user_email()
                 )
                 return False, "Invalid TOTP token"
                 
@@ -381,7 +438,8 @@ SecurityApp Team
             security_logger.log_activity(
                 action='totp_verification',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=global_user_session.get_current_user_email()
             )
             return False, f"TOTP verification failed: {str(e)}"
     
@@ -395,7 +453,8 @@ SecurityApp Team
                 security_logger.log_activity(
                     action='otp_cleanup',
                     status='success',
-                    details=f'Cleaned up {deleted_count} expired OTP codes'
+                    details=f'Cleaned up {deleted_count} expired OTP codes',
+                    email=None
                 )
             
             return deleted_count
@@ -404,7 +463,8 @@ SecurityApp Team
             security_logger.log_activity(
                 action='otp_cleanup',
                 status='failure',
-                details=f'Exception: {str(e)}'
+                details=f'Exception: {str(e)}',
+                email=None
             )
             return 0
     
@@ -426,7 +486,8 @@ SecurityApp Team
         security_logger.log_activity(
             action='email_simulation',
             status='success',
-            details=f'OTP email simulated for {user_email}'
+            details=f'OTP email simulated for {user_email}',
+            email=user_email
         )
     
     def get_current_totp(self, secret):

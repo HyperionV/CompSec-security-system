@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime, timezone
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
+from .logger import security_logger
 
 class DigitalSignature:
     def __init__(self, user_email, key_manager, database, logger):
@@ -57,14 +58,23 @@ class DigitalSignature:
             metadata = self._create_signature_metadata(filename, file_hash_hex)
             sig_file_path = self._save_signature_file(filename, metadata, signature)
 
-            self.logger.log_action(self.user_email, "FILE_SIGNED", "SUCCESS", 
-                                 f"File: {filename}, Hash: {file_hash_hex[:16]}...")
+            security_logger.log_activity(
+                action='file_signed',
+                status='success',
+                details=f'File: {filename}, Hash: {file_hash_hex[:16]}...',
+                email=self.user_email
+            )
 
             return True, sig_file_path
 
         except Exception as e:
             print("DEBUG: Exception in sign_file:", type(e).__name__, str(e))
-            self.logger.log_action(self.user_email, "FILE_SIGN_ERROR", "FAILED", str(e))
+            security_logger.log_activity(
+                action='file_sign_error',
+                status='failure',
+                details=str(e),
+                email=self.user_email
+            )
             return False, f"Signing failed: {str(e)}"
     
     def _calculate_file_hash(self, file_path):

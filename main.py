@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from modules.database import db
 from modules.logger import security_logger
-from modules.auth import auth_manager
+from modules.auth import auth_manager, global_user_session
 from modules.mfa import mfa_manager
 from modules.key_manager import key_manager
 from modules.key_lifecycle import lifecycle_service
@@ -103,7 +103,7 @@ def initialize_application():
         print("  ✓ Database initialized successfully")
     else:
         print("  ✗ Database initialization failed")
-        security_logger.log_activity(action='app_start', status='failure', details='Database initialization failed')
+        security_logger.log_activity(action='app_start', status='failure', details='Database initialization failed', email=None)
         return False
     
     # Initialize key lifecycle service
@@ -117,7 +117,7 @@ def initialize_application():
     
     print("- Logging system active")
     print("✓ Application initialized successfully")
-    security_logger.log_activity(action='app_start', status='success', details='Application started')
+    security_logger.log_activity(action='app_start', status='success', details='Application started', email=None)
     return True
 
 def clear_screen():
@@ -809,7 +809,7 @@ def handle_sign_file(digital_signature):
         print(f"\nSigning Details:")
         print(f"Original file: {os.path.basename(file_path)} ({file_size} bytes)")
         print(f"Signature file: {os.path.basename(result)} ({sig_size} bytes)")
-        print(f"Signer: {user_email}")
+        print(f"Signer: {user_session.user_info['email']}")
         print(f"Algorithm: SHA-256 + RSA-PSS")
             
     else:
@@ -964,11 +964,25 @@ def handle_authenticated_user(user_email):
             if is_admin:
                 handle_view_account_status()
             else:
-                security_logger.log_action(user_email, "logout", "success", "User logged out successfully")
+                # Log logout action
+                if user_email:
+                    security_logger.log_activity(
+                        action="logout",
+                        status="success",
+                        details="User logged out successfully",
+                        email=user_email
+                    )
                 print("Logged out successfully.")
                 break
         elif choice == "9" and is_admin:
-            security_logger.log_action(user_email, "logout", "success", "User logged out successfully")
+            # Log logout action
+            if user_email:
+                security_logger.log_activity(
+                    action="logout",
+                    status="success",
+                    details="User logged out successfully",
+                    email=user_email
+                )
             print("Logged out successfully.")
             break
         else:
@@ -984,7 +998,8 @@ def admin_required(func):
                 user_id=current_user.get('id') if current_user else None,
                 action='admin_access_denied',
                 status='failure',
-                details='Non-admin user attempted to access admin functionality'
+                details='Non-admin user attempted to access admin functionality',
+                email=current_user.get('email') if current_user else None
             )
             input("Press Enter to continue...")
             return None
@@ -1047,7 +1062,8 @@ def handle_admin_dashboard():
             user_id=user_session.user_info['id'],
             action='admin_dashboard_view',
             status='success',
-            details='Admin viewed system dashboard'
+            details='Admin viewed system dashboard',
+            email=user_session.user_info['email']
         )
         
     except Exception as e:
@@ -1056,7 +1072,8 @@ def handle_admin_dashboard():
             user_id=user_session.user_info['id'],
             action='admin_dashboard_view',
             status='failure',
-            details=f'Admin dashboard error: {e}'
+            details=f'Admin dashboard error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("\nPress Enter to continue...")
@@ -1122,7 +1139,8 @@ def handle_list_all_users():
             user_id=user_session.user_info['id'],
             action='admin_list_users',
             status='success',
-            details=f'Admin viewed user list ({len(users)} users)'
+            details=f'Admin viewed user list ({len(users)} users)',
+            email=user_session.user_info['email']
         )
         
     except Exception as e:
@@ -1131,7 +1149,8 @@ def handle_list_all_users():
             user_id=user_session.user_info['id'],
             action='admin_list_users',
             status='failure',
-            details=f'Admin user list error: {e}'
+            details=f'Admin user list error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("\nPress Enter to continue...")
@@ -1172,7 +1191,8 @@ def handle_view_user_details():
             user_id=user_session.user_info['id'],
             action='admin_view_user_details',
             status='success',
-            details=f'Admin viewed details for user {user["email"]} (ID: {user_id})'
+            details=f'Admin viewed details for user {user["email"]} (ID: {user_id})',
+            email=user_session.user_info['email']
         )
         
     except Exception as e:
@@ -1181,7 +1201,8 @@ def handle_view_user_details():
             user_id=user_session.user_info['id'],
             action='admin_view_user_details',
             status='failure',
-            details=f'Admin user details error: {e}'
+            details=f'Admin user details error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("\nPress Enter to continue...")
@@ -1237,7 +1258,8 @@ def handle_lock_user_account():
             user_id=user_session.user_info['id'],
             action='admin_lock_account',
             status='failure',
-            details=f'Admin account lock error: {e}'
+            details=f'Admin account lock error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("Press Enter to continue...")
@@ -1287,7 +1309,8 @@ def handle_unlock_user_account():
             user_id=user_session.user_info['id'],
             action='admin_unlock_account',
             status='failure',
-            details=f'Admin account unlock error: {e}'
+            details=f'Admin account unlock error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("Press Enter to continue...")
@@ -1353,7 +1376,8 @@ def handle_delete_user_account():
             user_id=user_session.user_info['id'],
             action='admin_delete_account',
             status='failure',
-            details=f'Admin account deletion error: {e}'
+            details=f'Admin account deletion error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("Press Enter to continue...")
@@ -1470,7 +1494,8 @@ def handle_filter_logs_by_user():
             user_id=user_session.user_info['id'],
             action='admin_filter_logs_user',
             status='success',
-            details=f'Admin filtered logs by User ID {user_id}'
+            details=f'Admin filtered logs by User ID {user_id}',
+            email=user_session.user_info['email']
         )
         
     except Exception as e:
@@ -1479,7 +1504,8 @@ def handle_filter_logs_by_user():
             user_id=user_session.user_info['id'],
             action='admin_filter_logs_user',
             status='failure',
-            details=f'Admin log filtering error: {e}'
+            details=f'Admin log filtering error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("\nPress Enter to continue...")
@@ -1521,7 +1547,8 @@ def handle_filter_logs_by_action():
             user_id=user_session.user_info['id'],
             action='admin_filter_logs_action',
             status='success',
-            details=f'Admin filtered logs by action: {action_filter}'
+            details=f'Admin filtered logs by action: {action_filter}',
+            email=user_session.user_info['email']
         )
         
     except Exception as e:
@@ -1530,7 +1557,8 @@ def handle_filter_logs_by_action():
             user_id=user_session.user_info['id'],
             action='admin_filter_logs_action',
             status='failure',
-            details=f'Admin log filtering error: {e}'
+            details=f'Admin log filtering error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("\nPress Enter to continue...")
@@ -1603,7 +1631,8 @@ def handle_user_role_management():
             user_id=user_session.user_info['id'],
             action='admin_update_role',
             status='failure',
-            details=f'Admin role management error: {e}'
+            details=f'Admin role management error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("Press Enter to continue...")
@@ -1764,7 +1793,7 @@ def main():
                     handle_account_recovery()
                 elif choice == "4":
                     print("\n👋 Thank you for using Security Application!")
-                    security_logger.log_activity(action='app_shutdown', status='success', details='Normal exit')
+                    security_logger.log_activity(action='app_shutdown', status='success', details='Normal exit', email=None)
                     break
                 else:
                     print("❌ Invalid choice. Please try again.")
@@ -1778,9 +1807,10 @@ def main():
         print("\n\nApplication interrupted by user")
         if user_session.is_authenticated:
             security_logger.log_activity(action='app_interrupt', status='success', 
-                                       details=f"User {user_session.user_info['email']} interrupted")
+                                       details=f"User {user_session.user_info['email']} interrupted", 
+                                       email=user_session.user_info['email'])
         else:
-            security_logger.log_activity(action='app_interrupt', status='success', details='User interrupt')
+            security_logger.log_activity(action='app_interrupt', status='success', details='User interrupt', email=None)
     except Exception as e:
         print(f"❌ GUI Application error: {e}")
         sys.exit(1)

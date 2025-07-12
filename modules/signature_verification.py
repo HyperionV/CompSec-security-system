@@ -5,6 +5,7 @@ from datetime import datetime
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
+from .logger import security_logger
 
 class SignatureVerification:
     def __init__(self, user_email, database, logger):
@@ -47,11 +48,11 @@ class SignatureVerification:
             # Check if the calculated hash matches the one in the signature metadata
             if file_hash_hex != metadata.get('file_hash'):
                 print("DEBUG: Hash mismatch! File may have been modified.")
-                self.logger.log_action(
-                    self.user_email, 
-                    "SIGNATURE_VERIFICATION", 
-                    "FAILED", 
-                    f"Hash mismatch for {os.path.basename(file_path)}"
+                security_logger.log_activity(
+                    action='signature_verification',
+                    status='failure',
+                    details=f'Hash mismatch for {os.path.basename(file_path)}',
+                    email=self.user_email
                 )
                 return False, "Signature verification failed: File hash does not match signature."
             
@@ -61,11 +62,11 @@ class SignatureVerification:
                 direct_result = self._try_direct_verification(file_data, signature_bytes)
                 if direct_result:
                     success_msg = f"Signature verified! Signed by: {metadata['signer_email']} on {metadata['timestamp']}"
-                    self.logger.log_action(
-                        self.user_email, 
-                        "SIGNATURE_VERIFICATION", 
-                        "SUCCESS", 
-                        f"Verified signature for {os.path.basename(file_path)} by {metadata['signer_email']}"
+                    security_logger.log_activity(
+                        action='signature_verification',
+                        status='success',
+                        details=f'Verified signature for {os.path.basename(file_path)} by {metadata["signer_email"]}',
+                        email=self.user_email
                     )
                     return True, success_msg
             
@@ -91,11 +92,11 @@ class SignatureVerification:
                     )
                     print(f"DEBUG: Verification SUCCESSFUL with key from {key_owner}")
                     success_msg = f"Signature verified! Signed by: {metadata['signer_email']} on {metadata['timestamp']}"
-                    self.logger.log_action(
-                        self.user_email, 
-                        "SIGNATURE_VERIFICATION", 
-                        "SUCCESS", 
-                        f"Verified signature for {os.path.basename(file_path)} by {metadata['signer_email']}"
+                    security_logger.log_activity(
+                        action='signature_verification',
+                        status='success',
+                        details=f'Verified signature for {os.path.basename(file_path)} by {metadata["signer_email"]}',
+                        email=self.user_email
                     )
                     return True, success_msg
                 except InvalidSignature:
@@ -105,20 +106,20 @@ class SignatureVerification:
                     print(f"DEBUG: Exception during verification with key from {key_owner}: {type(e).__name__}: {str(e)}")
                     continue
             
-            self.logger.log_action(
-                self.user_email, 
-                "SIGNATURE_VERIFICATION", 
-                "FAILED", 
-                f"Failed to verify signature for {os.path.basename(file_path)}"
+            security_logger.log_activity(
+                action='signature_verification',
+                status='failure',
+                details=f'Failed to verify signature for {os.path.basename(file_path)}',
+                email=self.user_email
             )
             return False, "Signature verification failed. Invalid signature or no matching public key found."
             
         except Exception as e:
-            self.logger.log_action(
-                self.user_email, 
-                "SIGNATURE_VERIFICATION", 
-                "ERROR", 
-                f"Error verifying signature: {str(e)}"
+            security_logger.log_activity(
+                action='signature_verification',
+                status='failure',
+                details=f'Error verifying signature: {str(e)}',
+                email=self.user_email
             )
             return False, f"Verification error: {str(e)}"
     

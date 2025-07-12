@@ -9,6 +9,52 @@ from .logger import SecurityLogger
 from .key_manager import KeyManager
 import json
 
+class GlobalUserSession:
+    """Singleton class to track the current logged-in user globally"""
+    _instance = None
+    _current_user = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(GlobalUserSession, cls).__new__(cls)
+        return cls._instance
+    
+    def set_current_user(self, user_info: Dict):
+        """Set the current logged-in user"""
+        self._current_user = user_info.copy() if user_info else None
+    
+    def get_current_user(self) -> Optional[Dict]:
+        """Get the current logged-in user info"""
+        return self._current_user.copy() if self._current_user else None
+    
+    def get_current_user_email(self) -> Optional[str]:
+        """Get the current user's email for logging"""
+        return self._current_user.get('email') if self._current_user else None
+    
+    def get_current_user_id(self) -> Optional[int]:
+        """Get the current user's ID"""
+        return self._current_user.get('id') if self._current_user else None
+    
+    def get_current_user_name(self) -> Optional[str]:
+        """Get the current user's name"""
+        return self._current_user.get('name') if self._current_user else None
+    
+    def is_logged_in(self) -> bool:
+        """Check if a user is currently logged in"""
+        return self._current_user is not None
+    
+    def clear_current_user(self):
+        """Clear the current user session"""
+        self._current_user = None
+    
+    def __str__(self):
+        if self._current_user:
+            return f"User: {self._current_user.get('name')} ({self._current_user.get('email')})"
+        return "No user logged in"
+
+# Global instance
+global_user_session = GlobalUserSession()
+
 class AuthManager:
     def __init__(self):
         self.db = DatabaseManager()
@@ -111,13 +157,13 @@ class AuthManager:
             email_valid, email_msg = self.validate_email(email)
             if not email_valid:
                 self.logger.log_activity(action="USER_REGISTRATION", status="failure", 
-                                             details=f"Validation failed: {', '.join(email_msg) if isinstance(email_msg, list) else email_msg}")
+                                             details=f"Validation failed: {', '.join(email_msg) if isinstance(email_msg, list) else email_msg}", email=email)
                 return False, email_msg[0] if isinstance(email_msg, list) else email_msg
             
             pwd_valid, pwd_msg = self.validate_password_strength(password)
             if not pwd_valid:
                 self.logger.log_activity(action="USER_REGISTRATION", status="failure", 
-                                             details=f"Validation failed: {pwd_msg}")
+                                             details=f"Validation failed: {pwd_msg}", email=email)
                 return False, pwd_msg
             
             # Generate salt and hash password
@@ -148,14 +194,19 @@ class AuthManager:
                     # Rollback user creation if key generation fails
                     self.db.execute_query("DELETE FROM users WHERE id = ?", (user_id,))
                     self.logger.log_activity(action="USER_REGISTRATION", status="failure", 
-                                                 details=f"Key generation failed, rolled back user: {email}")
+                                                 details=f"Key generation failed, rolled back user: {email}", email=email)
                     return False, f"Registration failed: {key_message}"
                 
                 self.logger.log_activity(action="KEY_MANAGEMENT", status="success", 
-                                             details=f"RSA keys generated for new user: {email}")
+                                             details=f"RSA keys generated for new user: {email}", email=email)
             
-            self.logger.log_registration(email, success=True, 
-                                        details=f"New user registered successfully with {'keys' if generate_keys else 'no keys'}")
+            # Log successful registration
+            self.logger.log_activity(
+                action="user_registration",
+                status="success",
+                details=f"New user registered successfully with {'keys' if generate_keys else 'no keys'}",
+                email=email
+            )
             
             if generate_keys:
                 return True, f"Registration successful! Save this recovery code: {recovery_code}\nRSA keys generated and ready for use."
@@ -170,8 +221,12 @@ class AuthManager:
                 except:
                     pass
                     
-            self.logger.log_registration(email, success=False, 
-                                       details=f"Registration failed: {str(e)}")
+            self.logger.log_activity(
+                action="user_registration",
+                status="failure",
+                details=f"Registration failed: {str(e)}",
+                email=email
+            )
             return False, f"Registration failed: {str(e)}"
     
     def check_account_lockout(self, email: str) -> Tuple[bool, str, int]:
@@ -229,7 +284,7 @@ class AuthManager:
                     self.db.execute_query(query, (current_attempts, locked_until, email))
                     
                     self.logger.log_activity(action="account_lockout", status="warning", 
-                                           details=f"Account locked for 5 minutes: {email}")
+                                           details=f"Account locked for 5 minutes: {email}", email=email)
                 else:
                     query = "UPDATE users SET failed_attempts = ? WHERE email = ?"
                     self.db.execute_query(query, (current_attempts, email))
@@ -241,7 +296,7 @@ class AuthManager:
         is_locked, lock_message, remaining_time = self.check_account_lockout(email)
         if is_locked:
             self.logger.log_activity(action="LOGIN_ATTEMPT", status="blocked", 
-                                         details=f"Locked account login attempt: {email}")
+                                         details=f"Locked account login attempt: {email}", email=email)
             return False, lock_message, None
         
         # Get user data and failed attempts for progressive delay
@@ -255,7 +310,7 @@ class AuthManager:
             # Apply delay even for non-existent users to prevent email enumeration
             self.apply_progressive_delay(1)
             self.logger.log_activity(action="LOGIN_ATTEMPT", status="failed", 
-                                         details=f"Login attempt with non-existent email: {email}")
+                                         details=f"Login attempt with non-existent email: {email}", email=email)
             return False, "Invalid credentials", None
         
         user_data = result[0]
@@ -279,7 +334,7 @@ class AuthManager:
         
         if password_valid:
             self.logger.log_activity(action="LOGIN_ATTEMPT", status="success", 
-                                         details=f"Successful login: {email}")
+                                         details=f"Successful login: {email}", email=user_email)
             
             # Check key status for the user
             key_status_success, key_status_msg, key_status = self.key_manager.check_key_status(user_id)
@@ -300,10 +355,13 @@ class AuthManager:
                 elif key_status['status'] == 'expired':
                     user_info['key_warning'] = "Your RSA keys have expired. Please renew them to access cryptographic features."
             
+            # DO NOT set global user session here - only set it after complete MFA verification
+            # This prevents session persistence bugs where old user remains logged in
+            
             return True, "Login successful", user_info
         else:
             self.logger.log_activity(action="LOGIN_ATTEMPT", status="failed", 
-                                         details=f"Invalid password for user: {email}")
+                                         details=f"Invalid password for user: {email}", email=email)
             return False, "Invalid credentials", None
 
     def initiate_login_flow(self, email: str, password: str) -> Tuple[bool, str, Optional[Dict]]:
@@ -317,7 +375,7 @@ class AuthManager:
         
         # Step 2: Credentials are valid, but user needs MFA
         self.logger.log_activity(action="LOGIN_FLOW", status="info", 
-                                     details=f"Credentials verified for {email}, MFA required")
+                                     details=f"Credentials verified for {email}, MFA required", email=user_info['email'])
         
         return True, "Credentials verified. Please complete MFA verification.", user_info
 
@@ -328,8 +386,11 @@ class AuthManager:
         
         # Skip MFA verification if already done (e.g., by MFA screen)
         if skip_mfa_verification:
+            # Set global user session only after successful MFA completion
+            global_user_session.set_current_user(user_info)
+            
             self.logger.log_activity(action="LOGIN_COMPLETE", status="success", 
-                                         details=f"Login completed with MFA: {user_info['email']}")
+                                         details=f"Login completed with MFA: {user_info['email']}", email=user_info['email'])
             return True, f"Login successful! Welcome {user_info['name']}"
         
         mfa_manager = MFAManager()
@@ -344,12 +405,15 @@ class AuthManager:
             return False, "Invalid MFA type"
         
         if valid:
+            # Set global user session only after successful MFA completion
+            global_user_session.set_current_user(user_info)
+            
             self.logger.log_activity(action="LOGIN_COMPLETE", status="success", 
-                                         details=f"Login completed with MFA: {user_info['email']}")
+                                         details=f"Login completed with MFA: {user_info['email']}", email=user_info['email'])
             return True, f"Login successful! Welcome {user_info['name']}"
         else:
             self.logger.log_activity(action="LOGIN_COMPLETE", status="failed", 
-                                         details=f"MFA verification failed: {user_info['email']}")
+                                         details=f"MFA verification failed: {user_info['email']}", email=user_info['email'])
             return False, f"MFA verification failed: {mfa_message}"
 
     def get_account_status(self, email: str) -> Dict:
@@ -428,13 +492,13 @@ class AuthManager:
             
             self.db.execute_query(query, params)
             self.logger.log_activity(action="PROFILE_UPDATE", status="success", 
-                                         details=f"Profile updated for user ID: {user_id}")
+                                         details=f"Profile updated for user ID: {user_id}", email=self.db.get_user_email_by_id(user_id))
             
             return True, "Profile updated successfully"
             
         except Exception as e:
             self.logger.log_activity(action="PROFILE_UPDATE", status="error", 
-                                         details=f"Profile update failed for user ID {user_id}: {str(e)}")
+                                         details=f"Profile update failed for user ID {user_id}: {str(e)}", email=self.db.get_user_email_by_id(user_id))
             return False, f"Profile update failed: {str(e)}"
     
     def change_passphrase(self, user_id: int, current_password: str, new_password: str) -> Tuple[bool, str]:
@@ -456,7 +520,7 @@ class AuthManager:
             provided_hash = self.hash_password(current_password, salt)
             if provided_hash != current_hash:
                 self.logger.log_activity(action="PASSPHRASE_CHANGE", status="failed", 
-                                             details=f"Invalid current password for user: {email}")
+                                             details=f"Invalid current password for user: {email}", email=email)
                 return False, "Current password is incorrect"
             
             # Validate new password strength
@@ -507,13 +571,13 @@ class AuthManager:
             self.db.execute_query(query, (new_password_hash, new_salt, user_id))
             
             self.logger.log_activity(action="PASSPHRASE_CHANGE", status="success", 
-                                         details=f"Passphrase changed for user: {email}")
+                                         details=f"Passphrase changed for user: {email}", email=email)
             
             return True, "Passphrase changed successfully. All RSA keys have been re-encrypted."
             
         except Exception as e:
             self.logger.log_activity(action="PASSPHRASE_CHANGE", status="error", 
-                                         details=f"Passphrase change failed for user ID {user_id}: {str(e)}")
+                                         details=f"Passphrase change failed for user ID {user_id}: {str(e)}", email=self.db.get_user_email_by_id(user_id))
             return False, f"Passphrase change failed: {str(e)}"
     
     def generate_new_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str]:
@@ -533,14 +597,14 @@ class AuthManager:
             
             if key_success:
                 self.logger.log_activity(action="KEY_GENERATION", status="success", 
-                                             details=f"New RSA keys generated for user: {email}")
+                                             details=f"New RSA keys generated for user: {email}", email=email)
                 return True, "New RSA keys generated successfully"
             else:
                 return False, key_message
                 
         except Exception as e:
             self.logger.log_activity(action="KEY_GENERATION", status="error", 
-                                         details=f"Key generation failed for user ID {user_id}: {str(e)}")
+                                         details=f"Key generation failed for user ID {user_id}: {str(e)}", email=self.db.get_user_email_by_id(user_id))
             return False, f"Key generation failed: {str(e)}"
     
     def renew_user_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str]:
@@ -560,14 +624,14 @@ class AuthManager:
             
             if renew_success:
                 self.logger.log_activity(action="KEY_RENEWAL", status="success", 
-                                             details=f"RSA keys renewed for user: {email}")
+                                             details=f"RSA keys renewed for user: {email}", email=email)
                 return True, "RSA keys renewed successfully"
             else:
                 return False, renew_message
                 
         except Exception as e:
             self.logger.log_activity(action="KEY_RENEWAL", status="error", 
-                                         details=f"Key renewal failed for user ID {user_id}: {str(e)}")
+                                         details=f"Key renewal failed for user ID {user_id}: {str(e)}", email=self.db.get_user_email_by_id(user_id))
             return False, f"Key renewal failed: {str(e)}"
 
     def recover_account_with_code(self, email: str, recovery_code: str, new_password: str) -> Tuple[bool, str]:
@@ -579,7 +643,7 @@ class AuthManager:
             
             if not result:
                 self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failed", 
-                                             details=f"Account recovery attempted for non-existent email: {email}")
+                                             details=f"Account recovery attempted for non-existent email: {email}", email=email)
                 return False, "Email not found"
             
             user_data = result[0]
@@ -589,7 +653,7 @@ class AuthManager:
             
             if not stored_recovery_hash:
                 self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failed", 
-                                             details=f"No recovery code set for user: {email}")
+                                             details=f"No recovery code set for user: {email}", email=email)
                 return False, "No recovery code available for this account"
             
             # Verify recovery code
@@ -597,7 +661,7 @@ class AuthManager:
             
             if provided_recovery_hash != stored_recovery_hash:
                 self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failed", 
-                                             details=f"Invalid recovery code for user: {email}")
+                                             details=f"Invalid recovery code for user: {email}", email=email)
                 return False, "Invalid recovery code"
             
             # Validate new password strength
@@ -630,13 +694,26 @@ class AuthManager:
             self.db.execute_query(query, (new_password_hash, new_salt, user_id))
             
             self.logger.log_activity(action="ACCOUNT_RECOVERY", status="success", 
-                                         details=f"Account recovered for user: {email}")
+                                         details=f"Account recovered for user: {email}", email=email)
             
             return True, "Account recovered successfully. Please generate new RSA keys as your old keys have been invalidated for security."
             
         except Exception as e:
             self.logger.log_activity(action="ACCOUNT_RECOVERY", status="error", 
-                                         details=f"Account recovery failed for {email}: {str(e)}")
+                                         details=f"Account recovery failed for {email}: {str(e)}", email=email)
             return False, f"Account recovery failed: {str(e)}"
+    
+    def logout_user(self, user_info: Dict = None):
+        """Logout the current user and clear global session"""
+        if user_info:
+            self.logger.log_activity(
+                action="user_logout",
+                status="success",
+                details=f"User logged out: {user_info['email']}",
+                email=user_info['email']
+            )
+        
+        # Clear the global user session
+        global_user_session.clear_current_user()
 
 auth_manager = AuthManager() 

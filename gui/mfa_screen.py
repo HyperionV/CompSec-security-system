@@ -166,9 +166,9 @@ class MFAScreen(QWidget):
     
     def reset_for_new_user(self, user_info):
         """Reset the screen for a new user"""
+        self.cleanup_timer()
         self.user_info = user_info
         self.otp_sent = False
-        self.countdown_timer.stop()
         self.otp_input.clear()
         self.otp_input.setEnabled(False)
         self.verify_button.setEnabled(False)
@@ -182,4 +182,31 @@ class MFAScreen(QWidget):
         for child in self.findChildren(QLabel):
             if "Logged in as:" in child.text():
                 child.setText(f"Logged in as: {user_info['email']}")
-                break 
+                break
+        
+        # Send new OTP for the new user
+        self.send_otp()
+    
+    def cleanup_timer(self):
+        """Clean up the countdown timer"""
+        if self.countdown_timer:
+            self.countdown_timer.stop()
+            self.remaining_time = 0
+    
+    def cleanup(self):
+        """Clean up resources when screen is destroyed"""
+        self.cleanup_timer()
+        self.otp_sent = False
+        self.otp_input.clear()
+    
+    def closeEvent(self, event):
+        """Handle widget close event"""
+        self.cleanup()
+        super().closeEvent(event)
+    
+    def __del__(self):
+        """Destructor to ensure cleanup"""
+        try:
+            self.cleanup()
+        except:
+            pass  # Ignore errors during destruction 

@@ -259,4 +259,22 @@ class LoginScreen(QWidget):
         self.recovery_email.clear()
         self.recovery_code.clear()
         self.recovery_new_password.clear()
-        self.recovery_confirm_password.clear() 
+        self.recovery_confirm_password.clear()
+    
+    def clear_login_form(self):
+        """Clear the login form fields"""
+        self.login_email.clear()
+        self.login_password.clear()
+    
+    def clear_all_forms(self):
+        """Clear all form fields across all tabs"""
+        self.clear_login_form()
+        self.clear_register_form()
+        self.clear_recovery_form()
+        # Switch back to login tab
+        self.tab_widget.setCurrentIndex(0)
+    
+    def reset_for_new_session(self):
+        """Reset the screen for a new session"""
+        self.clear_all_forms()
+        self.tab_widget.setCurrentIndex(0)  # Ensure login tab is selected 

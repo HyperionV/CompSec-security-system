@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from cryptography.hazmat.primitives import serialization
+from .logger import security_logger
 
 # Utility functions for safe datetime handling
 def safe_to_datetime(dt_value):
@@ -60,21 +61,21 @@ class PublicKeyManager:
                     'key_id': key_data[0]  # id from public_keys table
                 })
             
-            self.logger.log_action(
-                self.user_email, 
-                "public_key_search", 
-                "success", 
-                f"Searched for keys: {search_email}, found {len(results)} results"
+            security_logger.log_activity(
+                action='public_key_search',
+                status='success',
+                details=f'Searched for keys: {search_email}, found {len(results)} results',
+                email=self.user_email
             )
             
             return True, results
             
         except Exception as e:
-            self.logger.log_action(
-                self.user_email, 
-                "public_key_search", 
-                "error", 
-                f"Search failed for {search_email}: {str(e)}"
+            security_logger.log_activity(
+                action='public_key_search',
+                status='failure',
+                details=f'Search failed for {search_email}: {str(e)}',
+                email=self.user_email
             )
             return False, f"Search failed: {str(e)}"
     
@@ -107,21 +108,21 @@ class PublicKeyManager:
                     'key_id': key_data[0]
                 })
             
-            self.logger.log_action(
-                self.user_email, 
-                "list_all_keys", 
-                "success", 
-                f"Listed all available keys: {len(results)} total"
+            security_logger.log_activity(
+                action='list_all_keys',
+                status='success',
+                details=f'Listed all available keys: {len(results)} total',
+                email=self.user_email
             )
             
             return True, results
             
         except Exception as e:
-            self.logger.log_action(
-                self.user_email, 
-                "list_all_keys", 
-                "error", 
-                f"Failed to list keys: {str(e)}"
+            security_logger.log_activity(
+                action='list_all_keys',
+                status='failure',
+                details=f'Failed to list keys: {str(e)}',
+                email=self.user_email
             )
             return False, f"Failed to retrieve keys: {str(e)}"
     

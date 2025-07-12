@@ -57,7 +57,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='daily_lifecycle_check',
                 status='success',
-                details=f'Processed lifecycle for {results["keys_checked"]} keys'
+                details=f'Processed lifecycle for {results["keys_checked"]} keys',
+                email=None  # System operation
             )
             
             return True, "Daily lifecycle check completed successfully", results
@@ -66,7 +67,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='daily_lifecycle_check',
                 status='failure',
-                details=f'Lifecycle check failed: {str(e)}'
+                details=f'Lifecycle check failed: {str(e)}',
+                email=None  # System operation
             )
             return False, f"Daily lifecycle check failed: {str(e)}", None
     
@@ -78,7 +80,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='update_expired_keys',
                 status='failure',
-                details=f'Failed to update expired keys: {str(e)}'
+                details=f'Failed to update expired keys: {str(e)}',
+                email=None  # System operation
             )
             return 0
     
@@ -90,7 +93,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='update_expiring_keys',
                 status='failure',
-                details=f'Failed to update expiring keys: {str(e)}'
+                details=f'Failed to update expiring keys: {str(e)}',
+                email=None  # System operation
             )
             return 0
     
@@ -144,7 +148,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='expiring_keys_report',
                 status='failure',
-                details=f'Failed to generate report: {str(e)}'
+                details=f'Failed to generate report: {str(e)}',
+                email=None  # System operation
             )
             return False, f"Failed to generate expiring keys report: {str(e)}", None
     
@@ -181,7 +186,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='lifecycle_summary',
                 status='failure',
-                details=f'Failed to get summary: {str(e)}'
+                details=f'Failed to get summary: {str(e)}',
+                email=None  # System operation
             )
             return {
                 'total_keys': 0,
@@ -194,6 +200,9 @@ class KeyLifecycleService:
     def check_user_key_status(self, user_id: int) -> Tuple[bool, str, Optional[Dict]]:
         """Check and update key status for specific user"""
         try:
+            # Get user email for logging
+            user_email = db.get_user_email_by_id(user_id)
+            
             success, message, key_data = key_manager.check_key_status(user_id)
             
             if success:
@@ -201,23 +210,34 @@ class KeyLifecycleService:
                     user_id=user_id,
                     action='key_status_check',
                     status='success',
-                    details=f'Key status: {key_data["status"]}'
+                    details=f'Key status: {key_data["status"]}',
+                    email=user_email
                 )
             
             return success, message, key_data
             
         except Exception as e:
+            # Try to get user email even in exception case
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='key_status_check',
                 status='failure',
-                details=f'Status check failed: {str(e)}'
+                details=f'Status check failed: {str(e)}',
+                email=user_email
             )
             return False, f"Key status check failed: {str(e)}", None
     
     def renew_user_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str, Optional[Dict]]:
         """Renew keys for specific user"""
         try:
+            # Get user email for logging
+            user_email = db.get_user_email_by_id(user_id)
+            
             success, message, key_data = key_manager.renew_user_keys(user_id, passphrase)
             
             if success:
@@ -225,17 +245,25 @@ class KeyLifecycleService:
                     user_id=user_id,
                     action='key_renewal',
                     status='success',
-                    details='Keys renewed successfully'
+                    details='Keys renewed successfully',
+                    email=user_email
                 )
             
             return success, message, key_data
             
         except Exception as e:
+            # Try to get user email even in exception case
+            try:
+                user_email = db.get_user_email_by_id(user_id)
+            except:
+                user_email = None
+                
             security_logger.log_activity(
                 user_id=user_id,
                 action='key_renewal',
                 status='failure',
-                details=f'Key renewal failed: {str(e)}'
+                details=f'Key renewal failed: {str(e)}',
+                email=user_email
             )
             return False, f"Key renewal failed: {str(e)}", None
     
@@ -290,7 +318,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='otp_cleanup',
                 status='failure',
-                details=f'OTP cleanup failed: {str(e)}'
+                details=f'OTP cleanup failed: {str(e)}',
+                email=None  # System operation
             )
             return 0
     
@@ -322,7 +351,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='lifecycle_report',
                 status='success',
-                details='Comprehensive lifecycle report generated'
+                details='Comprehensive lifecycle report generated',
+                email=None  # System operation
             )
             
             return True, "Lifecycle report generated successfully", report
@@ -331,7 +361,8 @@ class KeyLifecycleService:
             security_logger.log_activity(
                 action='lifecycle_report',
                 status='failure',
-                details=f'Report generation failed: {str(e)}'
+                details=f'Report generation failed: {str(e)}',
+                email=None  # System operation
             )
             return False, f"Failed to generate lifecycle report: {str(e)}", None
 

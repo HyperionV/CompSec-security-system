@@ -52,6 +52,12 @@ class DatabaseManager:
         result = self.execute_query(query, (user_id,), fetch=True)
         return result[0] if result else None
     
+    def get_user_email_by_id(self, user_id):
+        """Get user email by user ID"""
+        query = "SELECT email FROM users WHERE id = ?"
+        result = self.execute_query(query, (user_id,), fetch=True)
+        return result[0]['email'] if result else None
+    
     def create_user(self, email, name, phone, address, birth_date, password_hash, salt, recovery_code_hash=None):
         query = """
         INSERT INTO users (email, name, phone, address, birth_date, password_hash, salt, recovery_code_hash)
@@ -284,13 +290,13 @@ class DatabaseManager:
 
     # Activity Logging Operations
     
-    def log_activity(self, user_id, action, status, details, ip_address='127.0.0.1'):
-        """Log security activity"""
+    def log_activity(self, user_id, action, status, details, ip_address='127.0.0.1', email=None):
+        """Log security activity - Updated to include email parameter"""
         query = """
-        INSERT INTO activity_logs (user_id, action, status, details, ip_address)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO activity_logs (user_id, action, status, details, ip_address, email)
+        VALUES (?, ?, ?, ?, ?, ?)
         """
-        return self.execute_query(query, (user_id, action, status, details, ip_address))
+        return self.execute_query(query, (user_id, action, status, details, ip_address, email))
     
     def get_user_activity_logs(self, user_id, limit=100):
         """Get activity logs for specific user"""
@@ -423,11 +429,14 @@ class DatabaseManager:
         
         # Log admin action
         if result:
+            # Get admin email for logging
+            admin_email = self.get_user_email_by_id(admin_user_id)
             self.log_activity(
                 admin_user_id, 
                 'admin_lock_account', 
                 'success', 
-                f'Admin locked user account ID: {user_id}'
+                f'Admin locked user account ID: {user_id}',
+                email=admin_email
             )
         return result
 
@@ -442,11 +451,14 @@ class DatabaseManager:
         
         # Log admin action
         if result:
+            # Get admin email for logging
+            admin_email = self.get_user_email_by_id(admin_user_id)
             self.log_activity(
                 admin_user_id, 
                 'admin_unlock_account', 
                 'success', 
-                f'Admin unlocked user account ID: {user_id}'
+                f'Admin unlocked user account ID: {user_id}',
+                email=admin_email
             )
         return result
 
@@ -564,11 +576,14 @@ class DatabaseManager:
         
         # Log admin action
         if result:
+            # Get admin email for logging
+            admin_email = self.get_user_email_by_id(admin_user_id)
             self.log_activity(
                 admin_user_id, 
                 'admin_update_role', 
                 'success', 
-                f'Admin changed role for user ID {user_id} to {new_role}'
+                f'Admin changed role for user ID {user_id} to {new_role}',
+                email=admin_email
             )
         return result
 
@@ -585,11 +600,14 @@ class DatabaseManager:
         
         # Log admin action
         if result:
+            # Get admin email for logging
+            admin_email = self.get_user_email_by_id(admin_user_id)
             self.log_activity(
                 admin_user_id, 
                 'admin_delete_account', 
                 'success', 
-                f'Admin deleted user account: {user_email} (ID: {user_id})'
+                f'Admin deleted user account: {user_email} (ID: {user_id})',
+                email=admin_email
             )
         return result
 
@@ -680,6 +698,7 @@ class DatabaseManager:
                 status TEXT NOT NULL,
                 details TEXT,
                 ip_address TEXT,
+                email TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )

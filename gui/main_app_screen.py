@@ -100,6 +100,10 @@ class MainAppScreen(QWidget):
     def handle_logout(self):
         """Handle logout request"""
         if show_question(self, "Logout", "Are you sure you want to logout?"):
+            # Clear global session
+            from modules.auth import global_user_session
+            global_user_session.clear_current_user()
+            
             self.user_session.logout()
             self.logout_requested.emit()
     
