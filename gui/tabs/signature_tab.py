@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, 
                              QPushButton, QLabel, QLineEdit, QFormLayout,
-                             QTextEdit)
+                             QTextEdit, QInputDialog)
 from PyQt5.QtCore import Qt
 from ..utils.dialogs import (show_error, show_info, show_warning, show_question, 
                             get_open_file, get_save_file)
@@ -148,9 +148,21 @@ class SignatureTab(QWidget):
             sig_file += '.sig'
         
         try:
+            # Prompt for passphrase
+            passphrase, ok = QInputDialog.getText(
+                self, 
+                "Enter Passphrase", 
+                "Enter your private key passphrase:", 
+                QLineEdit.Password
+            )
+            
+            if not ok or not passphrase:
+                show_warning(self, "Signing Cancelled", "Passphrase is required for signing.")
+                return
+                
             # Create digital signature
             success, message = self.digital_signature.sign_file(
-                input_file, self.user_session.user_info['email']
+                input_file, passphrase
             )
             
             if success:
@@ -184,38 +196,48 @@ class SignatureTab(QWidget):
             return
         
         try:
+            print(f"DEBUG: Verifying file: {original_file}")
+            print(f"DEBUG: With signature: {signature_file}")
+            
             # Verify signature
-            success, message, verification_data = self.signature_verification.verify_signature(
+            success, message = self.signature_verification.verify_signature(
                 original_file, signature_file
             )
             
             # Display results
-            if success:
-                result_text = f"✅ SIGNATURE VALID\n\n"
-                result_text += f"File: {original_file}\n"
-                result_text += f"Signature: {signature_file}\n\n"
-                
-                if verification_data:
-                    result_text += f"Signer: {verification_data.get('signer', 'Unknown')}\n"
-                    result_text += f"Signed: {verification_data.get('timestamp', 'Unknown')}\n"
-                    result_text += f"Algorithm: {verification_data.get('algorithm', 'RSA-SHA256')}\n"
-                
-                result_text += f"\nVerification: {message}"
-                self.results_text.setStyleSheet("color: green;")
-            else:
-                result_text = f"❌ SIGNATURE INVALID\n\n"
-                result_text += f"File: {original_file}\n"
-                result_text += f"Signature: {signature_file}\n\n"
-                result_text += f"Error: {message}"
-                self.results_text.setStyleSheet("color: red;")
+            self.results_text.clear()
             
-            self.results_text.setPlainText(result_text)
+            if success:
+                self.results_text.setStyleSheet("color: green;")
+                self.results_text.setText(f"✓ VERIFICATION SUCCESSFUL\n\n{message}")
+                
+                # Parse signature file to extract metadata for display
+                try:
+                    import json
+                    with open(signature_file, 'rb') as f:
+                        content = f.read()
+                    
+                    if b"---SIGNATURE---" in content:
+                        metadata_json = content.split(b"---SIGNATURE---", 1)[0].decode('utf-8')
+                        metadata = json.loads(metadata_json)
+                        
+                        # Add metadata details to results
+                        self.results_text.append("\n\nSignature Details:")
+                        self.results_text.append(f"• Signer: {metadata.get('signer_email', 'Unknown')}")
+                        self.results_text.append(f"• Date: {metadata.get('timestamp', 'Unknown')}")
+                        self.results_text.append(f"• File: {metadata.get('original_filename', 'Unknown')}")
+                        self.results_text.append(f"• Hash: {metadata.get('file_hash', 'Unknown')}")
+                except Exception as e:
+                    # If metadata parsing fails, just show the success message
+                    print(f"DEBUG: Error parsing metadata: {e}")
+            else:
+                self.results_text.setStyleSheet("color: red;")
+                self.results_text.setText(f"❌ VERIFICATION ERROR\n\n{message}")
             
         except Exception as e:
-            error_text = f"❌ VERIFICATION ERROR\n\n"
-            error_text += f"Failed to verify signature: {str(e)}"
-            self.results_text.setPlainText(error_text)
+            print(f"DEBUG: Exception in verify_signature UI method: {type(e).__name__}: {str(e)}")
             self.results_text.setStyleSheet("color: red;")
+            self.results_text.setText(f"❌ VERIFICATION ERROR\n\nFailed to verify signature: {str(e)}")
     
     def refresh_data(self):
         """Refresh tab data"""

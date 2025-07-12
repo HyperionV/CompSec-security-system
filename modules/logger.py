@@ -63,6 +63,18 @@ class SecurityLogger:
         full_details = f"{target_info} {details or ''}".strip()
         self.log_activity(user_id=admin_id, action=f'admin_{action}', status=status, details=full_details)
     
+    def log_action(self, user_identifier, action, status='success', details=None):
+        """Compatibility wrapper for legacy code expecting log_action.
+        Records the event via log_activity while embedding the user identifier (email or ID)
+        into the details field. This prevents AttributeError without changing other modules.
+        """
+        # Normalize status to lowercase for consistency
+        normalized_status = status.lower()
+        # Prepend actor information to details for traceability
+        wrapped_details = f"Actor:{user_identifier} | {details or ''}"
+        # Delegate to core log_activity
+        self.log_activity(user_id=None, action=action, status=normalized_status, details=wrapped_details)
+    
     def get_logs(self, user_id=None, limit=100):
         if user_id:
             query = "SELECT * FROM activity_logs WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?"
