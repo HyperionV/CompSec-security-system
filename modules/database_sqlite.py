@@ -300,10 +300,37 @@ class SQLiteDatabaseManager:
         return self.execute_query(query, (user_id, otp_code, expires_at))
     
     def get_valid_otp(self, user_id, otp_code):
-        """Get valid OTP"""
+        """Get valid OTP for user"""
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         query = """
-        SELECT id FROM otp_codes 
-        WHERE user_id = ? AND otp_code = ? AND used = 0 AND expires_at > datetime('now')
+        SELECT * FROM otp_codes 
+        WHERE user_id = ? AND otp_code = ? AND expires_at > ? AND used = 0
         """
-        result = self.execute_query(query, (user_id, otp_code), fetch=True)
-        return result[0] if result else None 
+        result = self.execute_query(query, (user_id, otp_code, current_time), fetch=True)
+        return result[0] if result else None
+        
+    def get_user_id(self, email):
+        """Get user ID from email address"""
+        query = "SELECT id FROM users WHERE email = ?"
+        result = self.execute_query(query, (email,), fetch=True)
+        return result[0]['id'] if result else None
+        
+    def get_user_public_key(self, user_id):
+        """Get the latest valid public key for a user"""
+        query = """
+        SELECT public_key FROM keys 
+        WHERE user_id = ? AND status IN ('valid', 'expiring') 
+        ORDER BY created_at DESC 
+        LIMIT 1
+        """
+        result = self.execute_query(query, (user_id,), fetch=True)
+        return result[0]['public_key'] if result else None
+        
+    def get_all_public_keys(self):
+        """Get all imported public keys"""
+        query = """
+        SELECT owner_email as email, public_key 
+        FROM public_keys 
+        WHERE is_active = 1
+        """
+        return self.execute_query(query, fetch=True) 

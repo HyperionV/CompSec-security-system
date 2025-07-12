@@ -501,37 +501,55 @@ class DatabaseManager:
         return stats
 
     def get_system_activity_logs(self, limit=100, offset=0, user_filter=None, action_filter=None):
-        """Get system-wide activity logs for admin viewing"""
-        conditions = []
+        """Get system activity logs with optional filtering"""
+        query = "SELECT * FROM activity_logs"
         params = []
         
+        # Apply filters if provided
+        where_clauses = []
         if user_filter:
-            conditions.append("user_id = ?")
+            where_clauses.append("user_id = ?")
             params.append(user_filter)
-        
         if action_filter:
-            conditions.append("action LIKE ?")
+            where_clauses.append("action LIKE ?")
             params.append(f"%{action_filter}%")
         
-        where_clause = ""
-        if conditions:
-            where_clause = "WHERE " + " AND ".join(conditions)
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
         
-        query = f"""
-        SELECT al.id, al.user_id, u.email as user_email, al.action, 
-               al.status, al.details, al.ip_address, al.timestamp
-        FROM activity_logs al
-        LEFT JOIN users u ON al.user_id = u.id
-        {where_clause}
-        ORDER BY al.timestamp DESC
-        LIMIT ? OFFSET ?
-        """
-        
+        query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
+        
         return self.execute_query(query, params, fetch=True)
-
+    
+    def get_user_id(self, email):
+        """Get user ID from email address"""
+        query = "SELECT id FROM users WHERE email = ?"
+        result = self.execute_query(query, (email,), fetch=True)
+        return result[0]['id'] if result else None
+    
+    def get_user_public_key(self, user_id):
+        """Get the latest valid public key for a user"""
+        query = """
+        SELECT public_key FROM keys 
+        WHERE user_id = ? AND status IN ('valid', 'expiring') 
+        ORDER BY created_at DESC 
+        LIMIT 1
+        """
+        result = self.execute_query(query, (user_id,), fetch=True)
+        return result[0]['public_key'] if result else None
+    
+    def get_all_public_keys(self):
+        """Get all imported public keys"""
+        query = """
+        SELECT owner_email as email, public_key 
+        FROM public_keys 
+        WHERE is_active = 1
+        """
+        return self.execute_query(query, fetch=True)
+    
     def get_user_role(self, user_id):
-        """Get user role for permission checking"""
+        """Get user role by ID"""
         query = "SELECT role FROM users WHERE id = ?"
         result = self.execute_query(query, (user_id,), fetch=True)
         return result[0]['role'] if result else None

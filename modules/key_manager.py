@@ -151,6 +151,12 @@ class KeyManager:
             nonce = base64.b64decode(encrypted_data['nonce'])
             ciphertext = base64.b64decode(encrypted_data['ciphertext'])
 
+            # Add debug info about the passphrase (safely)
+            print(f"DEBUG: Passphrase in decrypt_private_key - length: {len(passphrase)}")
+            print(f"DEBUG: First character: '{passphrase[0]}', Last character: '{passphrase[-1]}'")
+            if len(passphrase) > 2:
+                print(f"DEBUG: Second character: '{passphrase[1]}', Second-to-last character: '{passphrase[-2]}'")
+
             # Derive AES key using stored parameters
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
@@ -464,6 +470,61 @@ class KeyManager:
             
         except Exception as e:
             return False, f"Failed to retrieve keys: {str(e)}", None
+
+    def get_private_key(self, user_email: str, passphrase: str):
+        """Retrieve and decrypt the user's current RSA private key.
+
+        Args:
+            user_email (str): The email address of the user who owns the key.
+            passphrase (str): The user's passphrase to decrypt the private key.
+
+        Returns:
+            object | None: The deserialized private key object on success, or None on failure.
+        """
+        try:
+            # Look up the user and their latest valid/expiring key
+            user_record = db.get_user_by_email(user_email.lower().strip())
+            if not user_record:
+                security_logger.log_activity(action="get_private_key", status="failure", details=f"User not found: {user_email}")
+                return None
+
+            user_id = user_record['id']
+            
+            # Get the most recent key directly from the database
+            query = """
+            SELECT id, public_key, encrypted_private_key, created_at, expires_at, status
+            FROM keys 
+            WHERE user_id = ? AND status IN ('valid', 'expiring')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+            key_records = db.execute_query(query, (user_id,), fetch=True)
+            if not key_records or len(key_records) == 0:
+                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details="No valid key record found")
+                return None
+                
+            key_record = key_records[0]
+            print(f"DEBUG: Retrieved encrypted key data from DB: {key_record['encrypted_private_key']}")
+
+            # Parse the encrypted_private_key JSON
+            try:
+                encrypted_data = json.loads(key_record['encrypted_private_key'])
+            except Exception as e:
+                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details=f"Invalid encrypted key JSON: {str(e)}")
+                return None
+
+            # Decrypt the private key
+            decrypt_success, decrypt_message, private_key_obj = self.decrypt_private_key(encrypted_data, passphrase)
+            if not decrypt_success or not private_key_obj:
+                security_logger.log_activity(user_id=user_id, action="get_private_key", status="failure", details=f"Private key decryption failed: {decrypt_message}")
+                return None
+
+            security_logger.log_activity(user_id=user_id, action="get_private_key", status="success", details="Private key retrieved and decrypted")
+            return private_key_obj
+
+        except Exception as e:
+            security_logger.log_activity(action="get_private_key", status="error", details=f"Unexpected error: {type(e).__name__}: {str(e)}")
+            return None
 
 # Create global instance
 key_manager = KeyManager()
