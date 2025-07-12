@@ -65,6 +65,10 @@ class SQLiteDatabaseManager:
         query = "UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?"
         return self.execute_query(query, (attempts, locked_until, user_id))
     
+    def lock_account(self, user_id):
+        query = "UPDATE users SET is_locked = 1 WHERE id = ?"
+        return self.execute_query(query, (user_id,))
+    
     def unlock_account(self, user_id):
         query = "UPDATE users SET is_locked = 0, failed_attempts = 0, locked_until = NULL WHERE id = ?"
         return self.execute_query(query, (user_id,))
@@ -371,4 +375,68 @@ class SQLiteDatabaseManager:
         FROM public_keys 
         WHERE is_active = 1
         """
-        return self.execute_query(query, fetch=True) 
+        return self.execute_query(query, fetch=True)
+    
+    def get_system_statistics(self):
+        """Get system statistics for admin dashboard"""
+        try:
+            stats = {}
+            
+            # Total users
+            user_query = "SELECT COUNT(*) as count FROM users"
+            user_result = self.execute_query(user_query, fetch=True)
+            stats['total_users'] = user_result[0]['count'] if user_result else 0
+            
+            # Total keys
+            keys_query = "SELECT COUNT(*) as count FROM keys"
+            keys_result = self.execute_query(keys_query, fetch=True)
+            stats['total_keys'] = keys_result[0]['count'] if keys_result else 0
+            
+            # Total public keys
+            pub_keys_query = "SELECT COUNT(*) as count FROM public_keys WHERE is_active = 1"
+            pub_keys_result = self.execute_query(pub_keys_query, fetch=True)
+            stats['total_public_keys'] = pub_keys_result[0]['count'] if pub_keys_result else 0
+            
+            # Recent activity count (last 24 hours)
+            activity_query = """
+            SELECT COUNT(*) as count FROM activity_logs 
+            WHERE timestamp >= datetime('now', '-1 day')
+            """
+            activity_result = self.execute_query(activity_query, fetch=True)
+            stats['recent_activity_count'] = activity_result[0]['count'] if activity_result else 0
+            
+            return stats
+        except Exception as e:
+            print(f"Error getting system statistics: {e}")
+            return {'total_users': 0, 'total_keys': 0, 'total_public_keys': 0, 'recent_activity_count': 0}
+    
+    def get_all_activity_logs(self, limit=50):
+        """Get all activity logs for admin viewing"""
+        query = """
+        SELECT al.*, u.email 
+        FROM activity_logs al
+        LEFT JOIN users u ON al.user_id = u.id
+        ORDER BY al.timestamp DESC
+        LIMIT ?
+        """
+        return self.execute_query(query, (limit,), fetch=True)
+    
+    def get_public_keys_by_user(self, user_id):
+        """Get all public keys imported by a specific user"""
+        query = """
+        SELECT id, owner_email, public_key, creation_date, imported_at, is_active
+        FROM public_keys 
+        WHERE imported_by = ? AND is_active = 1
+        ORDER BY imported_at DESC
+        """
+        return self.execute_query(query, (user_id,), fetch=True)
+    
+    def search_public_key_by_email(self, user_id, search_email):
+        """Search for public keys by email for a specific user"""
+        query = """
+        SELECT id, owner_email, public_key, creation_date, imported_at, is_active
+        FROM public_keys 
+        WHERE imported_by = ? AND owner_email LIKE ? AND is_active = 1
+        ORDER BY imported_at DESC
+        """
+        return self.execute_query(query, (user_id, f'%{search_email}%'), fetch=True)

@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QFont
 from ..utils.dialogs import show_error, show_info, show_warning
+from modules.logger import security_logger
 
 class AdminTab(QWidget):
     def __init__(self, user_session, managers, parent=None):
@@ -37,9 +38,9 @@ class AdminTab(QWidget):
         users_layout = QVBoxLayout()
         
         self.users_table = QTableWidget()
-        self.users_table.setColumnCount(6)
+        self.users_table.setColumnCount(7)
         self.users_table.setHorizontalHeaderLabels([
-            "ID", "Email", "Name", "Role", "Created", "Status"
+            "ID", "Email", "Name", "Role", "Created", "Status", "Actions"
         ])
         
         # Set column resize mode
@@ -50,6 +51,7 @@ class AdminTab(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         
         users_layout.addWidget(self.users_table)
         
@@ -136,6 +138,29 @@ class AdminTab(QWidget):
         else:
             status_item.setForeground(QColor("#5cb85c"))
         self.users_table.setItem(row, 5, status_item)
+        
+        # Actions
+        actions_widget = QWidget()
+        actions_layout = QHBoxLayout()
+        actions_layout.setContentsMargins(5, 2, 5, 2)
+        
+        is_locked = user_data.get('is_locked', False)
+        user_id = user_data['id']
+        
+        if is_locked:
+            unlock_btn = QPushButton("Unlock")
+            unlock_btn.setStyleSheet("background-color: #5cb85c; color: white; border: none; padding: 3px 8px; border-radius: 3px;")
+            unlock_btn.clicked.connect(lambda: self.unlock_user_account(user_id))
+            actions_layout.addWidget(unlock_btn)
+        else:
+            lock_btn = QPushButton("Lock")
+            lock_btn.setStyleSheet("background-color: #d9534f; color: white; border: none; padding: 3px 8px; border-radius: 3px;")
+            lock_btn.clicked.connect(lambda: self.lock_user_account(user_id))
+            actions_layout.addWidget(lock_btn)
+        
+        actions_layout.addStretch()
+        actions_widget.setLayout(actions_layout)
+        self.users_table.setCellWidget(row, 6, actions_widget)
     
     def update_system_info(self):
         """Update system information display"""
@@ -191,4 +216,107 @@ class AdminTab(QWidget):
             dialog.exec_()
             
         except Exception as e:
-            show_error(self, "Error", f"Failed to load system logs: {str(e)}") 
+            show_error(self, "Error", f"Failed to load system logs: {str(e)}")
+    
+    def lock_user_account(self, user_id):
+        """Lock a user account"""
+        try:
+            # Check admin authorization
+            if self.user_session.user_info.get('role') != 'admin':
+                show_error(self, "Access Denied", "Only administrators can lock user accounts.")
+                return
+            
+            # Prevent self-locking
+            if user_id == self.user_session.user_info['id']:
+                show_error(self, "Error", "You cannot lock your own account.")
+                return
+            
+            # Get user info for confirmation and logging
+            user_info = self.db.get_user_by_id(user_id)
+            if not user_info:
+                show_error(self, "Error", "User not found")
+                return
+            
+            # Confirm action
+            from ..utils.dialogs import show_question
+            if not show_question(self, "Confirm Lock Account", 
+                                f"Are you sure you want to lock the account for {user_info['email']}?\n\nThis will prevent them from logging in."):
+                return
+            
+            # Lock the account
+            result = self.db.lock_account(user_id)
+            
+            if result:
+                # Log the admin action to both database and security.log
+                self.db.log_activity(
+                    user_id=self.user_session.user_info['id'],
+                    action='admin_lock_account',
+                    status='success',
+                    details=f"Admin locked account for user: {user_info['email']} (ID: {user_id})",
+                    email=self.user_session.user_info['email']
+                )
+                
+                security_logger.log_activity(
+                    user_id=self.user_session.user_info['id'],
+                    action='admin_lock_account',
+                    status='success',
+                    details=f"Admin locked account for user: {user_info['email']} (ID: {user_id})",
+                    email=self.user_session.user_info['email']
+                )
+                
+                show_info(self, "Success", f"Account for {user_info['email']} has been locked successfully.")
+                self.refresh_data()  # Refresh the table to show updated status
+            else:
+                show_error(self, "Error", "Failed to lock account")
+                
+        except Exception as e:
+            show_error(self, "Error", f"Failed to lock account: {str(e)}")
+    
+    def unlock_user_account(self, user_id):
+        """Unlock a user account"""
+        try:
+            # Check admin authorization
+            if self.user_session.user_info.get('role') != 'admin':
+                show_error(self, "Access Denied", "Only administrators can unlock user accounts.")
+                return
+            
+            # Get user info for confirmation and logging
+            user_info = self.db.get_user_by_id(user_id)
+            if not user_info:
+                show_error(self, "Error", "User not found")
+                return
+            
+            # Confirm action
+            from ..utils.dialogs import show_question
+            if not show_question(self, "Confirm Unlock Account", 
+                                f"Are you sure you want to unlock the account for {user_info['email']}?\n\nThis will allow them to log in again."):
+                return
+            
+            # Unlock the account
+            result = self.db.unlock_account(user_id)
+            
+            if result:
+                # Log the admin action to both database and security.log
+                self.db.log_activity(
+                    user_id=self.user_session.user_info['id'],
+                    action='admin_unlock_account',
+                    status='success',
+                    details=f"Admin unlocked account for user: {user_info['email']} (ID: {user_id})",
+                    email=self.user_session.user_info['email']
+                )
+                
+                security_logger.log_activity(
+                    user_id=self.user_session.user_info['id'],
+                    action='admin_unlock_account',
+                    status='success',
+                    details=f"Admin unlocked account for user: {user_info['email']} (ID: {user_id})",
+                    email=self.user_session.user_info['email']
+                )
+                
+                show_info(self, "Success", f"Account for {user_info['email']} has been unlocked successfully.")
+                self.refresh_data()  # Refresh the table to show updated status
+            else:
+                show_error(self, "Error", "Failed to unlock account")
+                
+        except Exception as e:
+            show_error(self, "Error", f"Failed to unlock account: {str(e)}")

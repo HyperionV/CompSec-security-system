@@ -301,7 +301,7 @@ class AuthManager:
         
         # Get user data and failed attempts for progressive delay
         query = """
-            SELECT id, email, name, password_hash, salt, role, failed_attempts 
+            SELECT id, email, name, password_hash, salt, role, failed_attempts, is_locked 
             FROM users WHERE email = ?
         """
         result = self.db.execute_query(query, (email,), fetch=True)
@@ -321,6 +321,13 @@ class AuthManager:
         salt = user_data['salt']
         role = user_data['role']
         failed_attempts = user_data['failed_attempts']
+        is_locked = user_data['is_locked']
+        
+        # Check if account is administratively locked
+        if is_locked:
+            self.logger.log_activity(action="LOGIN_ATTEMPT", status="blocked", 
+                                         details=f"Administratively locked account login attempt: {email}", email=email)
+            return False, "Account is locked. Please contact an administrator.", None
         
         # Apply progressive delay based on previous failed attempts
         self.apply_progressive_delay(failed_attempts)

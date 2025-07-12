@@ -70,6 +70,10 @@ class DatabaseManager:
         query = "UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?"
         return self.execute_query(query, (attempts, locked_until, user_id))
     
+    def lock_account(self, user_id):
+        query = "UPDATE users SET is_locked = 1 WHERE id = ?"
+        return self.execute_query(query, (user_id,))
+    
     def unlock_account(self, user_id):
         query = "UPDATE users SET is_locked = 0, failed_attempts = 0, locked_until = NULL WHERE id = ?"
         return self.execute_query(query, (user_id,))
