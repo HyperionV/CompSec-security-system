@@ -84,6 +84,31 @@ mysql-connector-python>=8.0.26
 
 ## 🚀 Quick Start Guide
 
+### Admin Setup for Testing
+
+For testing and development purposes, you can create a default admin account:
+
+**Option 1: Quick Setup Script**
+
+```bash
+# Windows
+create_admin.bat
+
+# Linux/macOS
+./create_admin.sh
+
+# Manual
+python create_admin.py
+```
+
+**Default Admin Credentials:**
+
+- **Email:** admin@admin.com
+- **Password:** Admin@123
+- **Role:** Administrator (full system access)
+
+⚠️ **Security Note:** Change the default password immediately after first login in production environments.
+
 ### First Time User
 
 1. **Launch Application**
@@ -92,20 +117,25 @@ mysql-connector-python>=8.0.26
    python main.py
    ```
 
-2. **Register Account**
+2. **Login Options**
+
+   - **Admin Login:** Use admin@admin.com / Admin@123 (if created)
+   - **New User:** Click "Register New Account"
+
+3. **Register Account** (for new users)
 
    - Click "Register New Account"
    - Fill in personal information
    - Create strong passphrase (8+ chars, mixed case, numbers, symbols)
    - **SAVE RECOVERY CODE** (displayed only once!)
 
-3. **Setup Security**
+4. **Setup Security**
 
    - Complete MFA setup (OTP or Google Authenticator)
    - Generate RSA key pair for encryption
    - Import contacts' public keys for file sharing
 
-4. **Start Using Features**
+5. **Start Using Features**
    - Encrypt files for secure sharing
    - Sign documents for authenticity
    - Generate QR codes for public key sharing
@@ -124,6 +154,9 @@ python main.py
 ```
 SecurityApp/
 ├── main.py                     # Application entry point
+├── create_admin.py             # Admin account creation script
+├── create_admin.bat            # Admin setup script (Windows)
+├── create_admin.sh             # Admin setup script (Linux/macOS)
 ├── requirements.txt            # Python dependencies
 ├── README.md                  # Project documentation
 ├── config/

@@ -116,109 +116,41 @@ class DatabaseManager:
         return False
     
     def initialize_database(self):
-        """Initialize SQLite database with required tables"""
+        """Initialize the database with all required tables"""
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Users table
-                cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT UNIQUE NOT NULL,
-                    name TEXT NOT NULL,
-                    phone TEXT,
-                    address TEXT,
-                    birth_date TEXT,
-                    password_hash TEXT NOT NULL,
-                    salt TEXT NOT NULL,
-                    role TEXT DEFAULT 'user',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_locked INTEGER DEFAULT 0,
-                    failed_attempts INTEGER DEFAULT 0,
-                    locked_until TIMESTAMP NULL,
-                    recovery_code_hash TEXT
-                )
-                """)
-                
-                # Keys table
-                cursor.execute("""
-                CREATE TABLE IF NOT EXISTS keys (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    public_key TEXT NOT NULL,
-                    encrypted_private_key TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMP NOT NULL,
-                    status TEXT DEFAULT 'valid',
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                )
-                """)
-                
-                # OTP codes table
-                cursor.execute("""
-                CREATE TABLE IF NOT EXISTS otp_codes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    otp_code TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMP NOT NULL,
-                    used INTEGER DEFAULT 0,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                )
-                """)
-                
-                # Recovery codes table
-                cursor.execute("""
-                CREATE TABLE IF NOT EXISTS recovery_codes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    recovery_code_hash TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    used_at TIMESTAMP NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                )
-                """)
-                
-                # Public keys table
-                cursor.execute("""
-                CREATE TABLE IF NOT EXISTS public_keys (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    owner_email TEXT NOT NULL,
-                    public_key TEXT NOT NULL,
-                    creation_date TEXT NOT NULL,
-                    imported_by INTEGER NOT NULL,
-                    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_active INTEGER DEFAULT 1,
-                    FOREIGN KEY (imported_by) REFERENCES users(id)
-                )
-                """)
-                
-                # Activity logs table
-                cursor.execute("""
-                CREATE TABLE IF NOT EXISTS activity_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    action TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    details TEXT,
-                    ip_address TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                )
-                """)
-                
-                # Create indexes for performance
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_keys_user_id ON keys(user_id)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_logs_user_id ON activity_logs(user_id)")
-                
-                conn.commit()
-            print("✅ SQLite database initialized successfully!")
+            # Create tables
+            self.create_tables()
+            
+            # Run migrations
+            self.run_migrations()
+            
             return True
         except Exception as e:
-            print(f"Database initialization failed: {e}")
+            print(f"Database initialization error: {e}")
             return False
+    
+    def run_migrations(self):
+        """Run database migrations to update schema"""
+        try:
+            # Check if email column exists in activity_logs table
+            check_query = "PRAGMA table_info(activity_logs)"
+            columns = self.execute_query(check_query, fetch=True)
+            
+            has_email_column = False
+            if columns:
+                for column in columns:
+                    if column['name'] == 'email':
+                        has_email_column = True
+                        break
+            
+            # Add email column if it doesn't exist
+            if not has_email_column:
+                alter_query = "ALTER TABLE activity_logs ADD COLUMN email VARCHAR(255)"
+                self.execute_query(alter_query)
+                print("✓ Added email column to activity_logs table")
+                
+        except Exception as e:
+            print(f"Migration error: {e}")
 
     # Key Management Operations
     
@@ -642,6 +574,106 @@ class DatabaseManager:
                 f'Admin deleted user account: {user_email} (ID: {user_id})'
             )
         return result
+
+    def create_tables(self):
+        """Create all required database tables"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Users table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT,
+                address TEXT,
+                birth_date TEXT,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_locked INTEGER DEFAULT 0,
+                failed_attempts INTEGER DEFAULT 0,
+                locked_until TIMESTAMP NULL,
+                recovery_code_hash TEXT
+            )
+            """)
+            
+            # Keys table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                public_key TEXT NOT NULL,
+                encrypted_private_key TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                status TEXT DEFAULT 'valid',
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """)
+            
+            # OTP codes table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS otp_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                otp_code TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                used INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """)
+            
+            # Recovery codes table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS recovery_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                recovery_code_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                used_at TIMESTAMP NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """)
+            
+            # Public keys table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_email TEXT NOT NULL,
+                public_key TEXT NOT NULL,
+                creation_date TEXT NOT NULL,
+                imported_by INTEGER NOT NULL,
+                imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 1,
+                FOREIGN KEY (imported_by) REFERENCES users(id)
+            )
+            """)
+            
+            # Activity logs table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS activity_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                action TEXT NOT NULL,
+                status TEXT NOT NULL,
+                details TEXT,
+                ip_address TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """)
+            
+            # Create indexes for performance
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_keys_user_id ON keys(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_logs_user_id ON activity_logs(user_id)")
+            
+            conn.commit()
+        print("✅ SQLite database initialized successfully!")
 
 # Global database instance
 db = DatabaseManager() 

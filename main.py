@@ -153,7 +153,6 @@ def show_authenticated_menu():
     print("5. Digital Signature Operations")
     print("6. Public Key Search and Management")
     
-    # Show admin option only for admin users
     current_user = user_session.user_info
     if current_user and current_user.get('role') == 'admin':
         print("7. Admin Panel")
@@ -1402,24 +1401,25 @@ def handle_view_recent_logs(limit=50):
             return
         
         print(f"\nShowing {len(logs)} log entries:\n")
-        print(f"{'Time':<19} {'User':<25} {'Action':<20} {'Status':<8} {'Details'}")
-        print("-" * 100)
         
         for log in logs:
-            timestamp = safe_strftime(log['created_at'], '%Y-%m-%d %H:%M:%S')
-            user_email = log['user_email'][:24] if log['user_email'] else 'System'
-            action = log['action'][:19] if log['action'] else 'N/A'
-            status = log['status']
-            details = log['details'][:30] + '...' if log['details'] and len(log['details']) > 30 else (log['details'] or '')
+            timestamp = safe_strftime(log['timestamp'], '%Y-%m-%d %H:%M:%S')
             
-            print(f"{timestamp:<19} {user_email:<25} {action:<20} {status:<8} {details}")
+            # Use new universal format: [Time] Email:<user_email> Action:<action> Status:<status> Details:<detail>
+            user_email = log.get('email', 'None')
+            action = log.get('action', 'N/A')
+            status = log.get('status', 'unknown')
+            details = log.get('details', '')
+            
+            print(f"[{timestamp}] Email:{user_email} Action:{action} Status:{status} Details:{details}")
         
         # Log admin action
         security_logger.log_activity(
             user_id=user_session.user_info['id'],
             action='admin_view_logs',
             status='success',
-            details=f'Admin viewed system logs (limit: {limit})'
+            details=f'Admin viewed system logs (limit: {limit})',
+            email=user_session.user_info['email']
         )
         
     except Exception as e:
@@ -1428,7 +1428,8 @@ def handle_view_recent_logs(limit=50):
             user_id=user_session.user_info['id'],
             action='admin_view_logs',
             status='failure',
-            details=f'Admin log viewing error: {e}'
+            details=f'Admin log viewing error: {e}',
+            email=user_session.user_info['email']
         )
     
     input("\nPress Enter to continue...")

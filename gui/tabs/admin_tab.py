@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QPushButton, QLabel, QTableWidget, QTableWidgetItem,
                              QHeaderView)
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QFont
 from ..utils.dialogs import show_error, show_info, show_warning
 
 class AdminTab(QWidget):
@@ -117,7 +118,10 @@ class AdminTab(QWidget):
         role = user_data.get('role', 'user').upper()
         role_item = QTableWidgetItem(role)
         if role == 'ADMIN':
-            role_item.setStyleSheet("color: #d9534f; font-weight: bold;")
+            role_item.setForeground(QColor("#d9534f"))
+            font = QFont()
+            font.setBold(True)
+            role_item.setFont(font)
         self.users_table.setItem(row, 3, role_item)
         
         # Created date
@@ -128,9 +132,9 @@ class AdminTab(QWidget):
         status = "Locked" if user_data.get('is_locked') else "Active"
         status_item = QTableWidgetItem(status)
         if status == "Locked":
-            status_item.setStyleSheet("color: #d9534f;")
+            status_item.setForeground(QColor("#d9534f"))
         else:
-            status_item.setStyleSheet("color: #5cb85c;")
+            status_item.setForeground(QColor("#5cb85c"))
         self.users_table.setItem(row, 5, status_item)
     
     def update_system_info(self):
@@ -159,7 +163,7 @@ class AdminTab(QWidget):
                 show_info(self, "System Logs", "No activity logs found.")
                 return
             
-            # Format logs for display
+            # Format logs for display using the new universal format
             log_text = "RECENT SYSTEM ACTIVITY\n"
             log_text += "=" * 50 + "\n\n"
             
@@ -173,14 +177,13 @@ class AdminTab(QWidget):
                 else:
                     formatted_time = timestamp
                 
-                log_text += f"[{formatted_time}] "
-                log_text += f"User {log.get('user_id', 'N/A')}: "
-                log_text += f"{log['action']} - {log['status']}\n"
+                # Use new universal format: [Time] Email:<user_email> Action:<action> Status:<status> Details:<detail>
+                user_email = log.get('email', 'None')
+                action = log.get('action', 'N/A')
+                status = log.get('status', 'unknown')
+                details = log.get('details', '')
                 
-                if log.get('details'):
-                    log_text += f"  Details: {log['details']}\n"
-                
-                log_text += "\n"
+                log_text += f"[{formatted_time}] Email:{user_email} Action:{action} Status:{status} Details:{details}\n\n"
             
             # Show in dialog
             from ..utils.dialogs import InfoDialog

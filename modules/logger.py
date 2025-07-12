@@ -19,49 +19,54 @@ class SecurityLogger:
         )
         self.logger = logging.getLogger('SecurityApp')
     
-    def log_activity(self, user_id=None, action=None, status='success', details=None, ip_address='127.0.0.1'):
+    def log_activity(self, user_id=None, action=None, status='success', details=None, ip_address='127.0.0.1', email=None):
         # Log to database
         try:
             query = """
-            INSERT INTO activity_logs (user_id, action, status, details, ip_address)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO activity_logs (user_id, action, status, details, ip_address, email)
+            VALUES (?, ?, ?, ?, ?, ?)
             """
-            db.execute_query(query, (user_id, action, status, str(details), ip_address)) # Explicitly cast details to str
+            db.execute_query(query, (user_id, action, status, str(details), ip_address, email))
         except Exception as e:
             self.logger.error(f"Failed to log to database: {e}")
         
-        # Log to file
+        # Log to file using the new universal format: [Time] Email:<user_email> Action:<action> Status:<status> Details:<detail>
         log_level = logging.INFO if status == 'success' else logging.WARNING if status == 'warning' else logging.ERROR
-        message = f"User:{user_id} Action:{action} Status:{status} Details:{details}"
+        user_email = email if email else "None"
+        message = f"Email:{user_email} Action:{action} Status:{status} Details:{details}"
         self.logger.log(log_level, message)
+    
+    def log_action(self, user_email, action, status, details=None):
+        """Backward compatibility method for modules using log_action"""
+        self.log_activity(email=user_email, action=action, status=status, details=details)
     
     def log_auth_attempt(self, email, success=True, details=None):
         status = 'success' if success else 'failure'
         action = 'login_attempt'
-        self.log_activity(action=action, status=status, details=f"Email: {email}, {details or ''}")
+        self.log_activity(action=action, status=status, details=details, email=email)
     
     def log_registration(self, email, success=True, details=None):
         status = 'success' if success else 'failure'
         action = 'user_registration'
-        self.log_activity(action=action, status=status, details=f"Email: {email}, {details or ''}")
+        self.log_activity(action=action, status=status, details=details, email=email)
     
-    def log_key_operation(self, user_id, operation, success=True, details=None):
+    def log_key_operation(self, user_id, operation, success=True, details=None, email=None):
         status = 'success' if success else 'failure'
         action = f'key_{operation}'
-        self.log_activity(user_id=user_id, action=action, status=status, details=details)
+        self.log_activity(user_id=user_id, action=action, status=status, details=details, email=email)
     
-    def log_file_operation(self, user_id, operation, filename=None, success=True, details=None):
+    def log_file_operation(self, user_id, operation, filename=None, success=True, details=None, email=None):
         status = 'success' if success else 'failure'
         action = f'file_{operation}'
         file_info = f"File: {filename}" if filename else ""
         full_details = f"{file_info} {details or ''}".strip()
-        self.log_activity(user_id=user_id, action=action, status=status, details=full_details)
+        self.log_activity(user_id=user_id, action=action, status=status, details=full_details, email=email)
     
-    def log_admin_action(self, admin_id, action, target_user=None, success=True, details=None):
+    def log_admin_action(self, admin_id, action, target_user=None, success=True, details=None, email=None):
         status = 'success' if success else 'failure'
         target_info = f"Target: {target_user}" if target_user else ""
         full_details = f"{target_info} {details or ''}".strip()
-        self.log_activity(user_id=admin_id, action=f'admin_{action}', status=status, details=full_details)
+        self.log_activity(user_id=admin_id, action=f'admin_{action}', status=status, details=full_details, email=email)
     
     def get_logs(self, user_id=None, limit=100):
         if user_id:

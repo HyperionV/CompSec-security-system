@@ -74,6 +74,7 @@ CREATE TABLE activity_logs (
     status ENUM('success', 'failure', 'warning') NOT NULL,
     details TEXT,
     ip_address VARCHAR(45),
+    email VARCHAR(255),
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
