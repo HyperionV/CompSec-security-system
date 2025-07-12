@@ -3,9 +3,9 @@ from contextlib import contextmanager
 import os
 
 class DatabaseManager:
-    def __init__(self):
-        self.db_path = 'data/security_app.db'
-        os.makedirs('data', exist_ok=True)
+    def __init__(self, db_path='data/security_app.db'):
+        self.db_path = db_path
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         print("💾 Using SQLite database for secure storage")
     
     @contextmanager
@@ -659,7 +659,7 @@ class DatabaseManager:
                 birth_date TEXT,
                 password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL,
-                role TEXT DEFAULT 'user',
+                role TEXT DEFAULT 'user' CHECK(role IN ('user', 'admin')),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_locked INTEGER DEFAULT 0,
                 failed_attempts INTEGER DEFAULT 0,
@@ -677,8 +677,8 @@ class DatabaseManager:
                 encrypted_private_key TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP NOT NULL,
-                status TEXT DEFAULT 'valid',
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                status TEXT DEFAULT 'valid' CHECK(status IN ('valid', 'expiring', 'expired')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """)
             
@@ -691,7 +691,7 @@ class DatabaseManager:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP NOT NULL,
                 used INTEGER DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """)
             
@@ -703,7 +703,7 @@ class DatabaseManager:
                 secret TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_active INTEGER DEFAULT 1,
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """)
             
@@ -715,7 +715,7 @@ class DatabaseManager:
                 recovery_code_hash TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 used_at TIMESTAMP NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """)
             
@@ -729,7 +729,8 @@ class DatabaseManager:
                 imported_by INTEGER NOT NULL,
                 imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_active INTEGER DEFAULT 1,
-                FOREIGN KEY (imported_by) REFERENCES users(id)
+                FOREIGN KEY (imported_by) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(owner_email, imported_by)
             )
             """)
             
@@ -739,12 +740,12 @@ class DatabaseManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 action TEXT NOT NULL,
-                status TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('success', 'failure', 'warning')),
                 details TEXT,
                 ip_address TEXT,
                 email TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
             )
             """)
             

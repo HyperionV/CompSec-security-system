@@ -236,13 +236,13 @@ def ensure_database_initialized(db_path):
     """Ensure database and tables exist"""
     try:
         # Import the database manager to initialize tables
-        from modules.database_sqlite import SQLiteDatabaseManager
+        from modules.database import DatabaseManager
         
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
         # Initialize database (this will create tables if they don't exist)
-        db_manager = SQLiteDatabaseManager(db_path)
+        db_manager = DatabaseManager(db_path)
         print("✅ Database initialized successfully")
         return True
         
