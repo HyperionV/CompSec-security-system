@@ -194,7 +194,7 @@ Do not share this code with anyone.
     
     def generate_otp_code(self):
         """Generate 6-digit OTP code"""
-        return str(secrets.randbelow(999999)).zfill(6)
+        return pyotp.HOTP(pyotp.random_base32()).at(secrets.randbelow(9999999))
     
     def generate_totp_secret(self):
         """Generate TOTP secret for user"""
@@ -408,6 +408,106 @@ Do not share this code with anyone.
                 email=user_email
             )
             return False, f"TOTP setup failed: {str(e)}"
+    
+    def setup_user_totp(self, user_id, user_email):
+        """Setup TOTP for a specific user and store in database"""
+        try:
+            # Check if user already has TOTP setup
+            if db.has_totp_setup(user_id):
+                return False, "TOTP already setup for this user"
+            
+            # Setup TOTP
+            success, totp_data = self.setup_totp(user_email)
+            
+            if not success:
+                return False, totp_data
+            
+            # Store secret in database
+            store_success = db.store_totp_secret(user_id, totp_data['secret'])
+            
+            if store_success:
+                security_logger.log_activity(
+                    user_id=user_id,
+                    action='totp_user_setup',
+                    status='success',
+                    details=f'TOTP setup and stored for user {user_email}',
+                    email=user_email
+                )
+                return True, totp_data
+            else:
+                return False, "Failed to store TOTP secret"
+                
+        except Exception as e:
+            security_logger.log_activity(
+                user_id=user_id,
+                action='totp_user_setup',
+                status='failure',
+                details=f'Exception: {str(e)}',
+                email=user_email
+            )
+            return False, f"TOTP setup failed: {str(e)}"
+    
+    def verify_user_totp(self, user_id, token):
+        """Verify TOTP token for a specific user"""
+        try:
+            # Get user's TOTP secret
+            secret = db.get_totp_secret(user_id)
+            
+            if not secret:
+                return False, "TOTP not setup for this user"
+            
+            # Verify token
+            return self.verify_totp(secret, token)
+            
+        except Exception as e:
+            security_logger.log_activity(
+                user_id=user_id,
+                action='totp_user_verification',
+                status='failure',
+                details=f'Exception: {str(e)}',
+                email=None
+            )
+            return False, f"TOTP verification failed: {str(e)}"
+    
+    def has_totp_setup(self, user_id):
+        """Check if user has TOTP setup"""
+        return db.has_totp_setup(user_id)
+    
+    def get_user_totp_qr(self, user_id, user_email):
+        """Get TOTP QR code for existing user"""
+        try:
+            secret = db.get_totp_secret(user_id)
+            
+            if not secret:
+                return False, "TOTP not setup for this user"
+            
+            # Create TOTP object
+            totp = pyotp.TOTP(secret)
+            
+            # Generate provisioning URI for QR code
+            provisioning_uri = totp.provisioning_uri(
+                name=user_email,
+                issuer_name="SecurityApp"
+            )
+            
+            # Generate QR code
+            qr = qrcode.QRCode(version=1, box_size=10, border=4)
+            qr.add_data(provisioning_uri)
+            qr.make(fit=True)
+            
+            qr_image = qr.make_image(fill_color="black", back_color="white")
+            
+            img_buffer = io.BytesIO()
+            qr_image.save(img_buffer, format='PNG')
+            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+            
+            return True, {
+                'qr_code_base64': img_base64,
+                'secret': secret
+            }
+            
+        except Exception as e:
+            return False, f"Failed to generate QR code: {str(e)}"
     
     def verify_totp(self, secret, token):
         """Verify TOTP token"""

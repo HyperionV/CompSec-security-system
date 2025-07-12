@@ -288,6 +288,34 @@ class DatabaseManager:
         query = "DELETE FROM otp_codes WHERE expires_at < datetime('now')"
         return self.execute_query(query)
 
+    # TOTP Management Operations
+    
+    def store_totp_secret(self, user_id, secret):
+        """Store TOTP secret for user"""
+        query = """
+        INSERT OR REPLACE INTO totp_secrets (user_id, secret)
+        VALUES (?, ?)
+        """
+        return self.execute_query(query, (user_id, secret))
+    
+    def get_totp_secret(self, user_id):
+        """Get TOTP secret for user"""
+        query = """
+        SELECT secret FROM totp_secrets 
+        WHERE user_id = ? AND is_active = 1
+        """
+        result = self.execute_query(query, (user_id,), fetch=True)
+        return result[0]['secret'] if result else None
+    
+    def has_totp_setup(self, user_id):
+        """Check if user has TOTP setup"""
+        query = """
+        SELECT COUNT(*) as count FROM totp_secrets 
+        WHERE user_id = ? AND is_active = 1
+        """
+        result = self.execute_query(query, (user_id,), fetch=True)
+        return result[0]['count'] > 0 if result else False
+
     # Activity Logging Operations
     
     def log_activity(self, user_id, action, status, details, ip_address='127.0.0.1', email=None):
@@ -659,6 +687,18 @@ class DatabaseManager:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP NOT NULL,
                 used INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """)
+            
+            # TOTP secrets table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS totp_secrets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                secret TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 1,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
             """)

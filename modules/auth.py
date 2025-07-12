@@ -382,7 +382,7 @@ class AuthManager:
     def complete_login_with_mfa(self, user_info: Dict, mfa_token: str, 
                                mfa_type: str = "otp", skip_mfa_verification: bool = False) -> Tuple[bool, str]:
         """Complete login after MFA verification"""
-        from .mfa import MFAManager
+        from .mfa import mfa_manager
         
         # Skip MFA verification if already done (e.g., by MFA screen)
         if skip_mfa_verification:
@@ -393,14 +393,12 @@ class AuthManager:
                                          details=f"Login completed with MFA: {user_info['email']}", email=user_info['email'])
             return True, f"Login successful! Welcome {user_info['name']}"
         
-        mfa_manager = MFAManager()
-        
         if mfa_type == "otp":
             # Verify OTP token
             valid, mfa_message = mfa_manager.verify_otp(user_info['id'], mfa_token)
         elif mfa_type == "totp":
-            # Verify TOTP token  
-            valid, mfa_message = mfa_manager.verify_totp_token(user_info['email'], mfa_token)
+            # Verify TOTP token using user-specific method
+            valid, mfa_message = mfa_manager.verify_user_totp(user_info['id'], mfa_token)
         else:
             return False, "Invalid MFA type"
         

@@ -169,6 +169,18 @@ class SQLiteDatabaseManager:
                 )
                 """)
                 
+                # TOTP secrets table
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS totp_secrets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    secret TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active INTEGER DEFAULT 1,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """)
+                
                 # Recovery codes table
                 cursor.execute("""
                 CREATE TABLE IF NOT EXISTS recovery_codes (
@@ -308,6 +320,32 @@ class SQLiteDatabaseManager:
         """
         result = self.execute_query(query, (user_id, otp_code, current_time), fetch=True)
         return result[0] if result else None
+    
+    def store_totp_secret(self, user_id, secret):
+        """Store TOTP secret for user"""
+        query = """
+        INSERT OR REPLACE INTO totp_secrets (user_id, secret)
+        VALUES (?, ?)
+        """
+        return self.execute_query(query, (user_id, secret))
+    
+    def get_totp_secret(self, user_id):
+        """Get TOTP secret for user"""
+        query = """
+        SELECT secret FROM totp_secrets 
+        WHERE user_id = ? AND is_active = 1
+        """
+        result = self.execute_query(query, (user_id,), fetch=True)
+        return result[0]['secret'] if result else None
+    
+    def has_totp_setup(self, user_id):
+        """Check if user has TOTP setup"""
+        query = """
+        SELECT COUNT(*) as count FROM totp_secrets 
+        WHERE user_id = ? AND is_active = 1
+        """
+        result = self.execute_query(query, (user_id,), fetch=True)
+        return result[0]['count'] > 0 if result else False
         
     def get_user_id(self, email):
         """Get user ID from email address"""
