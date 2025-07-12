@@ -515,7 +515,7 @@ Do not share this code with anyone.
             totp = pyotp.TOTP(secret)
             
             # Verify token with window for clock skew
-            is_valid = totp.verify(token, valid_window=1)
+            is_valid = totp.verify(token, valid_window=0)
             
             if is_valid:
                 security_logger.log_activity(
