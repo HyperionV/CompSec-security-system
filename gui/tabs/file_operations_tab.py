@@ -79,6 +79,12 @@ class FileOperationsTab(QWidget):
         
         encrypt_layout.addRow("", refresh_layout)
         
+        # Output Format selection for Feature 16
+        self.output_format_combo = QComboBox()
+        self.output_format_combo.addItem("Combined (.enc)", "combined")
+        self.output_format_combo.addItem("Separate (.enc + .key)", "separate")
+        encrypt_layout.addRow("Output Format:", self.output_format_combo)
+
         # Encrypt button
         self.encrypt_button = QPushButton("Encrypt File")
         self.encrypt_button.clicked.connect(self.encrypt_file)
@@ -225,7 +231,7 @@ class FileOperationsTab(QWidget):
             file_path=input_file, # Changed input_file to file_path
             recipient_email=recipient_email,
             sender_user_id=self.user_session.user_info['id'], # Changed sender_email to sender_user_id
-            output_format='combined' # Added output_format
+            output_format=self.output_format_combo.currentData() # Added output_format
             # The output_file parameter is handled by file_crypto.encrypt_file internally.
         )
         self.worker.progress_updated.connect(self.update_progress)
