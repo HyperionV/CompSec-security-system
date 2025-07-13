@@ -1,7 +1,12 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, 
-                             QPushButton, QLabel, QTextEdit, QProgressBar)
+                             QPushButton, QLabel, QTextEdit, QProgressBar, QTabWidget, 
+                             QFileDialog, QMessageBox, QScrollArea)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
+import base64
+import json
+import os
+from datetime import datetime
 from ..utils.dialogs import show_error, show_info, show_warning, show_question, PasswordDialog
 
 class KeyManagementTab(QWidget):
@@ -32,15 +37,77 @@ class KeyManagementTab(QWidget):
         self.status_label.setWordWrap(True)
         status_layout.addWidget(self.status_label)
         
-        # Key details text area
-        self.key_details = QTextEdit()
-        self.key_details.setReadOnly(True)
-        self.key_details.setMaximumHeight(150)
-        self.key_details.setFont(QFont("Courier", 9))
-        status_layout.addWidget(self.key_details)
+        # Key metadata display
+        self.key_metadata = QTextEdit()
+        self.key_metadata.setReadOnly(True)
+        self.key_metadata.setMaximumHeight(120)
+        self.key_metadata.setFont(QFont("Courier", 9))
+        status_layout.addWidget(self.key_metadata)
         
         status_group.setLayout(status_layout)
         layout.addWidget(status_group)
+        
+        # Key Display Section with Tabs
+        keys_group = QGroupBox("Key Content")
+        keys_layout = QVBoxLayout()
+        
+        # Create tab widget for public/private keys
+        self.key_tabs = QTabWidget()
+        
+        # Public Key Tab
+        public_tab = QWidget()
+        public_layout = QVBoxLayout()
+        
+        # Public key display
+        self.public_key_text = QTextEdit()
+        self.public_key_text.setReadOnly(True)
+        self.public_key_text.setFont(QFont("Courier", 8))
+        self.public_key_text.setMaximumHeight(200)
+        public_layout.addWidget(self.public_key_text)
+        
+        # Public key buttons
+        public_buttons = QHBoxLayout()
+        self.save_public_pem_btn = QPushButton("Save Public Key as .pem")
+        self.save_public_pem_btn.clicked.connect(self.save_public_key_pem)
+        self.copy_public_btn = QPushButton("Copy Public Key")
+        self.copy_public_btn.clicked.connect(self.copy_public_key)
+        public_buttons.addWidget(self.save_public_pem_btn)
+        public_buttons.addWidget(self.copy_public_btn)
+        public_layout.addLayout(public_buttons)
+        
+        public_tab.setLayout(public_layout)
+        self.key_tabs.addTab(public_tab, "Public Key")
+        
+        # Private Key Tab
+        private_tab = QWidget()
+        private_layout = QVBoxLayout()
+        
+        # Private key display
+        self.private_key_text = QTextEdit()
+        self.private_key_text.setReadOnly(True)
+        self.private_key_text.setFont(QFont("Courier", 8))
+        self.private_key_text.setMaximumHeight(200)
+        private_layout.addWidget(self.private_key_text)
+        
+        # Private key buttons
+        private_buttons = QHBoxLayout()
+        self.view_private_btn = QPushButton("View Private Key")
+        self.view_private_btn.clicked.connect(self.view_private_key)
+        self.save_private_pem_btn = QPushButton("Save Private Key as .pem")
+        self.save_private_pem_btn.clicked.connect(self.save_private_key_pem)
+        self.copy_private_btn = QPushButton("Copy Private Key")
+        self.copy_private_btn.clicked.connect(self.copy_private_key)
+        private_buttons.addWidget(self.view_private_btn)
+        private_buttons.addWidget(self.save_private_pem_btn)
+        private_buttons.addWidget(self.copy_private_btn)
+        private_layout.addLayout(private_buttons)
+        
+        private_tab.setLayout(private_layout)
+        self.key_tabs.addTab(private_tab, "Private Key")
+        
+        keys_layout.addWidget(self.key_tabs)
+        keys_group.setLayout(keys_layout)
+        layout.addWidget(keys_group)
         
         # Key Actions Section
         actions_group = QGroupBox("Key Management Actions")
@@ -83,6 +150,10 @@ class KeyManagementTab(QWidget):
         
         layout.addStretch()
         self.setLayout(layout)
+        
+        # Initialize private key display
+        self.current_private_key = None
+        self.private_key_text.setText("Click 'View Private Key' to display private key content")
     
     def update_key_status(self):
         """Update the current key status display"""
@@ -95,13 +166,16 @@ class KeyManagementTab(QWidget):
             if not keys:
                 self.status_label.setText("❌ No RSA keys found")
                 self.status_label.setStyleSheet("color: red; font-weight: bold;")
-                self.key_details.setText("No keys available. Please generate new keys.")
+                self.key_metadata.setText("No keys available. Please generate new keys.")
+                self.public_key_text.setText("No public key available")
+                self.private_key_text.setText("Click 'View Private Key' to display private key content")
                 self.generate_button.setEnabled(True)
                 self.renew_button.setEnabled(False)
+                self._disable_key_buttons()
                 return
             
             # Get the most recent key
-            latest_key = keys # Direct assignment, as it's already a single dict or None
+            latest_key = keys
             
             # Check key status
             from datetime import datetime
@@ -119,32 +193,188 @@ class KeyManagementTab(QWidget):
             if days_until_expiry < 0:
                 status_text = f"🔴 Keys EXPIRED {abs(days_until_expiry)} days ago"
                 status_color = "color: red; font-weight: bold;"
-                self.generate_button.setEnabled(True)
-                self.renew_button.setEnabled(True)
+                key_status = "Expired"
             elif days_until_expiry <= 7:
                 status_text = f"🟡 Keys expiring in {days_until_expiry} days"
                 status_color = "color: orange; font-weight: bold;"
-                self.generate_button.setEnabled(True)
-                self.renew_button.setEnabled(True)
+                key_status = "Near expiration"
             else:
                 status_text = f"✅ Keys valid ({days_until_expiry} days remaining)"
                 status_color = "color: green; font-weight: bold;"
-                self.generate_button.setEnabled(True)
-                self.renew_button.setEnabled(True)
+                key_status = "Valid"
             
             self.status_label.setText(status_text)
             self.status_label.setStyleSheet(status_color)
             
-            # Update key details
-            details = f"Key ID: {latest_key['id']}\n"
-            details += f"Created: {created_at.strftime('%Y-%m-%d')}\n"
-            details += f"Expires: {expires_at.strftime('%Y-%m-%d')}\n"
-            details += f"Status: {latest_key['status'].upper()}\n"
-            details += f"Algorithm: RSA-2048"
+            # Update key metadata with detailed information
+            metadata = f"Key ID: {latest_key['id']}\n"
+            metadata += f"Creation Date: {created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            metadata += f"Expiration Date: {expires_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            metadata += f"Status: {key_status}\n"
+            metadata += f"Algorithm: RSA-2048\n"
+            metadata += f"Days Until Expiry: {days_until_expiry}"
+            
+            self.key_metadata.setText(metadata)
+            
+            # Display public key
+            public_key_pem = latest_key['public_key']
+            self.public_key_text.setText(public_key_pem)
+            
+            # Reset private key display
+            self.private_key_text.setText("Click 'View Private Key' to display private key content")
+            self.current_private_key = None
+            
+            # Enable key management buttons
+            self.generate_button.setEnabled(True)
+            self.renew_button.setEnabled(True)
+            self._enable_key_buttons()
             
         except Exception as e:
             self.status_label.setText(f"Error loading key status: {str(e)}")
             self.status_label.setStyleSheet("color: red;")
+            self._disable_key_buttons()
+    
+    def _enable_key_buttons(self):
+        """Enable all key-related buttons"""
+        self.save_public_pem_btn.setEnabled(True)
+        self.copy_public_btn.setEnabled(True)
+        self.view_private_btn.setEnabled(True)
+        self.save_private_pem_btn.setEnabled(True)
+        self.copy_private_btn.setEnabled(True)
+    
+    def _disable_key_buttons(self):
+        """Disable all key-related buttons"""
+        self.save_public_pem_btn.setEnabled(False)
+        self.copy_public_btn.setEnabled(False)
+        self.view_private_btn.setEnabled(False)
+        self.save_private_pem_btn.setEnabled(False)
+        self.copy_private_btn.setEnabled(False)
+    
+    def view_private_key(self):
+        """View private key with password protection"""
+        # Get passphrase
+        password_dialog = PasswordDialog("View Private Key", "Enter your account passphrase:", self)
+        if password_dialog.exec_() != password_dialog.Accepted:
+            return
+        
+        passphrase = password_dialog.get_password()
+        if not passphrase:
+            show_error(self, "Error", "Passphrase is required.")
+            return
+        
+        try:
+            user_id = self.user_session.user_info['id']
+            keys = self.db.get_user_keys_by_id(user_id)
+            
+            if not keys:
+                show_error(self, "Error", "No keys found.")
+                return
+            
+            # Decrypt private key
+            encrypted_private_key = json.loads(keys['encrypted_private_key'])
+            success, message, private_key = self.key_manager.decrypt_private_key(encrypted_private_key, passphrase)
+            
+            if success:
+                # Convert private key to PEM format
+                from cryptography.hazmat.primitives import serialization
+                private_key_pem = private_key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.NoEncryption()
+                ).decode('utf-8')
+                
+                self.private_key_text.setText(private_key_pem)
+                self.current_private_key = private_key_pem
+                show_info(self, "Success", "Private key decrypted successfully.")
+            else:
+                show_error(self, "Decryption Failed", message)
+                
+        except Exception as e:
+            show_error(self, "Error", f"Failed to decrypt private key: {str(e)}")
+    
+    def save_public_key_pem(self):
+        """Save public key as .pem file"""
+        try:
+            user_id = self.user_session.user_info['id']
+            keys = self.db.get_user_keys_by_id(user_id)
+            
+            if not keys:
+                show_error(self, "Error", "No keys found.")
+                return
+            
+            # Get save location
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Public Key",
+                f"public_key_{user_id}.pem",
+                "PEM Files (*.pem);;All Files (*)"
+            )
+            
+            if filename:
+                with open(filename, 'w') as f:
+                    f.write(keys['public_key'])
+                show_info(self, "Success", f"Public key saved to {filename}")
+                
+        except Exception as e:
+            show_error(self, "Error", f"Failed to save public key: {str(e)}")
+    
+    def save_private_key_pem(self):
+        """Save private key as .pem file"""
+        if not self.current_private_key:
+            show_error(self, "Error", "Please view the private key first.")
+            return
+        
+        try:
+            user_id = self.user_session.user_info['id']
+            
+            # Get save location
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Private Key",
+                f"private_key_{user_id}.pem",
+                "PEM Files (*.pem);;All Files (*)"
+            )
+            
+            if filename:
+                with open(filename, 'w') as f:
+                    f.write(self.current_private_key)
+                show_info(self, "Success", f"Private key saved to {filename}")
+                
+        except Exception as e:
+            show_error(self, "Error", f"Failed to save private key: {str(e)}")
+    
+    def copy_public_key(self):
+        """Copy public key to clipboard"""
+        try:
+            user_id = self.user_session.user_info['id']
+            keys = self.db.get_user_keys_by_id(user_id)
+            
+            if not keys:
+                show_error(self, "Error", "No keys found.")
+                return
+            
+            from PyQt5.QtWidgets import QApplication
+            clipboard = QApplication.clipboard()
+            clipboard.setText(keys['public_key'])
+            show_info(self, "Success", "Public key copied to clipboard.")
+            
+        except Exception as e:
+            show_error(self, "Error", f"Failed to copy public key: {str(e)}")
+    
+    def copy_private_key(self):
+        """Copy private key to clipboard"""
+        if not self.current_private_key:
+            show_error(self, "Error", "Please view the private key first.")
+            return
+        
+        try:
+            from PyQt5.QtWidgets import QApplication
+            clipboard = QApplication.clipboard()
+            clipboard.setText(self.current_private_key)
+            show_info(self, "Success", "Private key copied to clipboard.")
+            
+        except Exception as e:
+            show_error(self, "Error", f"Failed to copy private key: {str(e)}")
     
     def generate_keys(self):
         """Generate new RSA keys"""

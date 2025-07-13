@@ -372,15 +372,15 @@ class DatabaseManager:
         return self.execute_query(query, (user_id,), fetch=True)
     
     def search_public_key_by_email(self, user_id, email):
-        """Search for a public key by email"""
+        """Search for public keys by email with partial matching"""
         query = """
         SELECT * FROM public_keys 
-        WHERE imported_by = ? AND owner_email = ? AND is_active = 1
+        WHERE imported_by = ? AND owner_email LIKE ? AND is_active = 1
         ORDER BY imported_at DESC
-        LIMIT 1
         """
-        result = self.execute_query(query, (user_id, email), fetch=True)
-        return result[0] if result else None
+        search_pattern = f"%{email}%"
+        result = self.execute_query(query, (user_id, search_pattern), fetch=True)
+        return result if result else []
     
     def deactivate_public_key(self, key_id, user_id):
         """Deactivate a public key"""

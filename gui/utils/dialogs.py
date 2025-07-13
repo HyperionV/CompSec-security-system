@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QProgressBar, QTextEdit,
                              QMessageBox, QFileDialog, QGroupBox, QApplication)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QPixmap
 import re
 
 class PasswordDialog(QDialog):
@@ -360,6 +360,88 @@ class RegistrationSuccessDialog(QDialog):
         except RuntimeError:
             # Button has been deleted, ignore silently
             pass
+
+class QRCodeDialog(QDialog):
+    def __init__(self, email, public_key, creation_date, parent=None):
+        super().__init__(parent)
+        self.email = email
+        self.public_key = public_key
+        self.creation_date = creation_date
+        self.setWindowTitle(f"QR Code for {email}")
+        self.setModal(True)
+        self.resize(400, 500)
+        self.setup_ui()
+        self.generate_qr_code()
+    
+    def setup_ui(self):
+        layout = QVBoxLayout()
+        
+        # Header
+        header_label = QLabel(f"QR Code for: {self.email}")
+        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setStyleSheet("font-weight: bold; font-size: 14px; margin: 10px;")
+        layout.addWidget(header_label)
+        
+        # QR Code display
+        self.qr_label = QLabel()
+        self.qr_label.setAlignment(Qt.AlignCenter)
+        self.qr_label.setStyleSheet("border: 1px solid #ccc; margin: 10px;")
+        self.qr_label.setMinimumSize(300, 300)
+        layout.addWidget(self.qr_label)
+        
+        # Info
+        info_text = f"Creation Date: {self.creation_date}\nScan this QR code to import the public key"
+        info_label = QLabel(info_text)
+        info_label.setAlignment(Qt.AlignCenter)
+        info_label.setStyleSheet("color: #666; margin: 10px;")
+        layout.addWidget(info_label)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        save_btn = QPushButton("Save QR Code")
+        save_btn.clicked.connect(self.save_qr_code)
+        button_layout.addWidget(save_btn)
+        
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+    
+    def generate_qr_code(self):
+        from modules.qr_handler import qr_handler
+        
+        try:
+            success, result = qr_handler.generate_public_key_qr(
+                self.email, self.public_key, self.creation_date
+            )
+            
+            if success:
+                # Convert base64 to QPixmap
+                import base64
+                
+                qr_data = base64.b64decode(result['qr_code_base64'])
+                pixmap = QPixmap()
+                pixmap.loadFromData(qr_data)
+                
+                # Scale to fit label
+                scaled_pixmap = pixmap.scaled(280, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.qr_label.setPixmap(scaled_pixmap)
+                
+                self.qr_result = result
+            else:
+                self.qr_label.setText(f"Error generating QR code:\n{result}")
+                
+        except Exception as e:
+            self.qr_label.setText(f"Error generating QR code:\n{str(e)}")
+    
+    def save_qr_code(self):
+        if hasattr(self, 'qr_result') and 'filepath' in self.qr_result:
+            show_info(self, "QR Code Saved", f"QR code saved to:\n{self.qr_result['filepath']}")
+        else:
+            show_warning(self, "Save Error", "No QR code available to save")
 
 def show_error(parent, title, message):
     QMessageBox.critical(parent, title, message)

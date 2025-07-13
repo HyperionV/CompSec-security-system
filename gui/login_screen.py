@@ -175,7 +175,7 @@ class LoginScreen(QWidget):
             return
         
         # Attempt login
-        success, message, user_info = self.auth_manager.initiate_login_flow(email, password)
+        success, message, user_info = self.auth_manager.initiate_login_flow(email, password, gui_mode=True)
         
         if success:
             self.login_successful.emit(user_info)

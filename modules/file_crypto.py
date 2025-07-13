@@ -204,9 +204,12 @@ class FileCrypto:
                 return False, "Cannot encrypt empty file", None
             
             # Get recipient's public key
-            public_key_data = db.search_public_key_by_email(sender_user_id, recipient_email)
-            if not public_key_data:
+            public_key_results = db.search_public_key_by_email(sender_user_id, recipient_email)
+            if not public_key_results:
                 return False, f"No public key found for {recipient_email}", None
+            
+            # Take the first result (most recent)
+            public_key_data = public_key_results[0]
             
             # Load recipient's public key
             recipient_public_key = serialization.load_pem_public_key(

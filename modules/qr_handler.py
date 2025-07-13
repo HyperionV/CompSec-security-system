@@ -93,7 +93,7 @@ class QRCodeHandler:
             )
             return False, str(e)
     
-    def read_qr_code(self, image_path):
+    def read_qr_code(self, image_path, user_email=None):
         """Read QR code from image file"""
         try:
             # Load image
@@ -110,7 +110,7 @@ class QRCodeHandler:
                     action='qr_code_read',
                     status='success',
                     details=f'QR code read from {image_path}',
-                    email=None  # Generic QR code reading, no user context
+                    email=user_email
                 )
                 
                 return True, qr_data
@@ -119,7 +119,7 @@ class QRCodeHandler:
                     action='qr_code_read',
                     status='failure',
                     details=f'No QR code found in {image_path}',
-                    email=None  # Generic QR code reading, no user context
+                    email=user_email
                 )
                 return False, "No QR code found in image"
                 
@@ -128,23 +128,24 @@ class QRCodeHandler:
                 action='qr_code_read',
                 status='failure',
                 details=f'Exception reading {image_path}: {str(e)}',
-                email=None  # Generic QR code reading, no user context
+                email=user_email
             )
             return False, str(e)
     
     def generate_public_key_qr(self, email, public_key, creation_date=None):
         """Generate QR code for public key sharing"""
         try:
+            # Use current date if not provided
             if creation_date is None:
                 creation_date = datetime.now().strftime('%Y-%m-%d')
             
-            # Format: email|creation_date|public_key_base64
+            # Create QR data: email|creation_date|public_key_base64
             public_key_base64 = base64.b64encode(public_key.encode()).decode()
             qr_data = f"{email}|{creation_date}|{public_key_base64}"
             
-            # Generate filename
-            safe_email = email.replace('@', '_').replace('.', '_')
+            # Generate QR code
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            safe_email = email.replace('@', '_').replace('.', '_')
             filename = f"pubkey_{safe_email}_{timestamp}.png"
             
             success, result = self.generate_qr_code(qr_data, filename)
@@ -160,22 +161,24 @@ class QRCodeHandler:
                     details=f'Public key QR code generated for {email}',
                     email=email
                 )
-            
-            return success, result
-            
+                
+                return True, result
+            else:
+                return False, result
+                
         except Exception as e:
             security_logger.log_activity(
                 action='public_key_qr_generated',
                 status='failure',
                 details=f'Exception: {str(e)}',
-                email=email if 'email' in locals() else None
+                email=email
             )
             return False, str(e)
     
-    def read_public_key_qr(self, image_path):
+    def read_public_key_qr(self, image_path, user_email=None):
         """Read and parse public key QR code"""
         try:
-            success, qr_data = self.read_qr_code(image_path)
+            success, qr_data = self.read_qr_code(image_path, user_email)
             
             if not success:
                 return False, qr_data
@@ -204,7 +207,7 @@ class QRCodeHandler:
                 action='public_key_qr_read',
                 status='success',
                 details=f'Public key QR code read for {email}',
-                email=email
+                email=user_email
             )
             
             return True, result
@@ -214,7 +217,7 @@ class QRCodeHandler:
                 action='public_key_qr_read',
                 status='failure',
                 details=f'Exception: {str(e)}',
-                email=None  # No user context available in exception
+                email=user_email
             )
             return False, str(e)
     
@@ -285,7 +288,7 @@ class QRCodeHandler:
             user_email = db.get_user_email_by_id(user_id)
             
             # Read QR code
-            success, qr_result = self.read_public_key_qr(image_path)
+            success, qr_result = self.read_public_key_qr(image_path, user_email)
             if not success:
                 return False, qr_result
             

@@ -2,7 +2,8 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QPushButton, QLabel, QLineEdit, QFormLayout,
                              QTableWidget, QTableWidgetItem, QHeaderView)
 from PyQt5.QtCore import Qt
-from ..utils.dialogs import show_error, show_info, show_warning
+from ..utils.dialogs import show_error, show_info, show_warning, QRCodeDialog
+from datetime import datetime, timedelta
 
 class PublicKeysTab(QWidget):
     def __init__(self, user_session, managers, parent=None):
@@ -40,9 +41,9 @@ class PublicKeysTab(QWidget):
         table_layout = QVBoxLayout()
         
         self.keys_table = QTableWidget()
-        self.keys_table.setColumnCount(5)
+        self.keys_table.setColumnCount(4)
         self.keys_table.setHorizontalHeaderLabels([
-            "Owner Email", "Creation Date", "Imported Date", "Status", "Source"
+            "Email", "QR Code", "Creation Date", "Expire In"
         ])
         
         # Set column resize mode
@@ -51,7 +52,6 @@ class PublicKeysTab(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         
         table_layout.addWidget(self.keys_table)
         
@@ -81,7 +81,7 @@ class PublicKeysTab(QWidget):
 • Import public keys via QR codes or direct sharing
 • Search for keys by email address to find available recipients
 • All imported keys are stored securely for future use
-• Only active keys are available for encryption operations""")
+• Click QR Code button to view and share public keys""")
         info_text.setWordWrap(True)
         info_text.setStyleSheet("color: #666; font-style: italic;")
         info_layout.addWidget(info_text)
@@ -141,7 +141,7 @@ class PublicKeysTab(QWidget):
                 no_keys_item.setFlags(Qt.ItemIsSelectable)
                 self.keys_table.setItem(0, 0, no_keys_item)
                 
-                for col in range(1, 5):
+                for col in range(1, 4):
                     empty_item = QTableWidgetItem("")
                     empty_item.setFlags(Qt.ItemIsSelectable)
                     self.keys_table.setItem(0, col, empty_item)
@@ -154,19 +154,43 @@ class PublicKeysTab(QWidget):
         row = self.keys_table.rowCount()
         self.keys_table.insertRow(row)
         
-        # Owner Email
+        # Email
         self.keys_table.setItem(row, 0, QTableWidgetItem(key_data['owner_email']))
         
+        # QR Code Button
+        qr_button = QPushButton("Show QR")
+        qr_button.clicked.connect(lambda: self.show_qr_code(key_data))
+        self.keys_table.setCellWidget(row, 1, qr_button)
+        
         # Creation Date
-        self.keys_table.setItem(row, 1, QTableWidgetItem(key_data['creation_date']))
+        self.keys_table.setItem(row, 2, QTableWidgetItem(key_data['creation_date']))
         
-        # Import Date
-        import_date = key_data['imported_at'].split('T')[0] if 'T' in key_data['imported_at'] else key_data['imported_at']
-        self.keys_table.setItem(row, 2, QTableWidgetItem(import_date))
+        # Expire In (calculate based on creation_date + 90 days)
+        try:
+            creation_date = datetime.strptime(key_data['creation_date'], '%Y-%m-%d')
+            expiration_date = creation_date + timedelta(days=90)
+            days_remaining = (expiration_date - datetime.now()).days
+            
+            if days_remaining < 0:
+                expire_text = f"Expired {abs(days_remaining)} days ago"
+            elif days_remaining == 0:
+                expire_text = "Expires today"
+            else:
+                expire_text = f"{days_remaining} days"
+        except:
+            expire_text = "N/A"
         
-        # Status
-        status = "Active" if key_data['is_active'] else "Inactive"
-        self.keys_table.setItem(row, 3, QTableWidgetItem(status))
-        
-        # Source (always QR Code for now)
-        self.keys_table.setItem(row, 4, QTableWidgetItem("QR Code")) 
+        self.keys_table.setItem(row, 3, QTableWidgetItem(expire_text))
+    
+    def show_qr_code(self, key_data):
+        """Show QR code for the selected public key"""
+        try:
+            dialog = QRCodeDialog(
+                key_data['owner_email'],
+                key_data['public_key'],
+                key_data['creation_date'],
+                self
+            )
+            dialog.exec_()
+        except Exception as e:
+            show_error(self, "QR Code Error", f"Failed to generate QR code: {str(e)}") 

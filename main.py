@@ -606,9 +606,10 @@ def handle_search_public_key():
         return
     
     # Search for public key
-    public_key_data = db.search_public_key_by_email(user_session.user_id, email)
+    public_key_results = db.search_public_key_by_email(user_session.user_id, email)
     
-    if public_key_data:
+    if public_key_results:
+        public_key_data = public_key_results[0]  # Take the first result (most recent)
         print(f"\n✅ Public key found for {email}")
         print(f"📧 Owner: {public_key_data['owner_email']}")
         print(f"📅 Creation Date: {public_key_data['creation_date']}")
@@ -645,8 +646,8 @@ def handle_encrypt_file():
         return
     
     # Check if recipient's public key exists
-    public_key_data = db.search_public_key_by_email(user_session.user_id, recipient_email)
-    if not public_key_data:
+    public_key_results = db.search_public_key_by_email(user_session.user_id, recipient_email)
+    if not public_key_results:
         print(f"❌ No public key found for {recipient_email}")
         print("💡 Import their public key using QR Code Operations first.")
         input("Press Enter to continue...")

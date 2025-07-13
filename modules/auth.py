@@ -239,24 +239,43 @@ class AuthManager:
         
         failed_attempts, locked_until = result[0]['failed_attempts'], result[0]['locked_until']
         
-        if locked_until and datetime.now() < locked_until:
-            remaining_seconds = int((locked_until - datetime.now()).total_seconds())
-            remaining_minutes = remaining_seconds // 60
-            remaining_seconds = remaining_seconds % 60
-            return True, f"Account locked. Try again in {remaining_minutes}m {remaining_seconds}s", remaining_seconds
-        
-        # Unlock account if lockout period has passed
-        if locked_until and datetime.now() >= locked_until:
-            self.db.execute_query(
-                "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE email = ?",
-                (email,)
-            )
+        if locked_until:
+            try:
+                if isinstance(locked_until, str):
+                    # Try parsing with microseconds first, then without
+                    try:
+                        locked_until_dt = datetime.strptime(locked_until, '%Y-%m-%d %H:%M:%S.%f')
+                    except ValueError:
+                        locked_until_dt = datetime.strptime(locked_until, '%Y-%m-%d %H:%M:%S')
+                else:
+                    locked_until_dt = locked_until
+                
+                current_time = datetime.now()
+                
+                if current_time < locked_until_dt:
+                    remaining_seconds = int((locked_until_dt - current_time).total_seconds())
+                    remaining_minutes = remaining_seconds // 60
+                    remaining_seconds = remaining_seconds % 60
+                    return True, f"Account locked. Try again in {remaining_minutes}m {remaining_seconds}s", remaining_seconds
+                
+                # Unlock account if lockout period has passed
+                if current_time >= locked_until_dt:
+                    self.db.execute_query(
+                        "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE email = ?",
+                        (email,)
+                    )
+            except (ValueError, TypeError) as e:
+                # If datetime parsing fails, clear the lock
+                self.db.execute_query(
+                    "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE email = ?",
+                    (email,)
+                )
         
         return False, "Account not locked", 0
 
-    def apply_progressive_delay(self, failed_attempts: int):
+    def apply_progressive_delay(self, failed_attempts: int, gui_mode: bool = False):
         """Apply progressive delay based on failed attempts"""
-        if failed_attempts > 0:
+        if failed_attempts > 0 and not gui_mode:
             delay_seconds = min(2 ** failed_attempts, 30)  # Max 30 seconds
             time.sleep(delay_seconds)
 
@@ -289,13 +308,13 @@ class AuthManager:
                     query = "UPDATE users SET failed_attempts = ? WHERE email = ?"
                     self.db.execute_query(query, (current_attempts, email))
 
-    def verify_login_credentials(self, email: str, password: str) -> Tuple[bool, str, Optional[Dict]]:
+    def verify_login_credentials(self, email: str, password: str, gui_mode: bool = False) -> Tuple[bool, str, Optional[Dict]]:
         """Verify login credentials with comprehensive security checks"""
         
-        # Check if account is locked
+        # Check if account is locked FIRST
         is_locked, lock_message, remaining_time = self.check_account_lockout(email)
         if is_locked:
-            self.logger.log_activity(action="LOGIN_ATTEMPT", status="blocked", 
+            self.logger.log_activity(action="LOGIN_ATTEMPT", status="warning", 
                                          details=f"Locked account login attempt: {email}", email=email)
             return False, lock_message, None
         
@@ -308,8 +327,8 @@ class AuthManager:
         
         if not result:
             # Apply delay even for non-existent users to prevent email enumeration
-            self.apply_progressive_delay(1)
-            self.logger.log_activity(action="LOGIN_ATTEMPT", status="failed", 
+            self.apply_progressive_delay(1, gui_mode)
+            self.logger.log_activity(action="LOGIN_ATTEMPT", status="failure", 
                                          details=f"Login attempt with non-existent email: {email}", email=email)
             return False, "Invalid credentials", None
         
@@ -325,12 +344,12 @@ class AuthManager:
         
         # Check if account is administratively locked
         if is_locked:
-            self.logger.log_activity(action="LOGIN_ATTEMPT", status="blocked", 
+            self.logger.log_activity(action="LOGIN_ATTEMPT", status="warning", 
                                          details=f"Administratively locked account login attempt: {email}", email=email)
             return False, "Account is locked. Please contact an administrator.", None
         
         # Apply progressive delay based on previous failed attempts
-        self.apply_progressive_delay(failed_attempts)
+        self.apply_progressive_delay(failed_attempts, gui_mode)
         
         # Verify password
         provided_hash = self.hash_password(password, salt)
@@ -367,21 +386,27 @@ class AuthManager:
             
             return True, "Login successful", user_info
         else:
-            self.logger.log_activity(action="LOGIN_ATTEMPT", status="failed", 
+            self.logger.log_activity(action="LOGIN_ATTEMPT", status="failure", 
                                          details=f"Invalid password for user: {email}", email=email)
-            return False, "Invalid credentials", None
+            
+            # Show warning about remaining attempts
+            remaining_attempts = 5 - (failed_attempts + 1)
+            if remaining_attempts > 0:
+                return False, f"Invalid credentials. {remaining_attempts} attempts remaining before account lockout.", None
+            else:
+                return False, "Invalid credentials", None
 
-    def initiate_login_flow(self, email: str, password: str) -> Tuple[bool, str, Optional[Dict]]:
+    def initiate_login_flow(self, email: str, password: str, gui_mode: bool = False) -> Tuple[bool, str, Optional[Dict]]:
         """Complete login flow with MFA integration"""
         
         # Step 1: Verify credentials
-        credential_valid, message, user_info = self.verify_login_credentials(email, password)
+        credential_valid, message, user_info = self.verify_login_credentials(email, password, gui_mode)
         
         if not credential_valid:
             return False, message, None
         
         # Step 2: Credentials are valid, but user needs MFA
-        self.logger.log_activity(action="LOGIN_FLOW", status="info", 
+        self.logger.log_activity(action="LOGIN_FLOW", status="success", 
                                      details=f"Credentials verified for {email}, MFA required", email=user_info['email'])
         
         return True, "Credentials verified. Please complete MFA verification.", user_info
@@ -417,7 +442,7 @@ class AuthManager:
                                          details=f"Login completed with MFA: {user_info['email']}", email=user_info['email'])
             return True, f"Login successful! Welcome {user_info['name']}"
         else:
-            self.logger.log_activity(action="LOGIN_COMPLETE", status="failed", 
+            self.logger.log_activity(action="LOGIN_COMPLETE", status="failure", 
                                          details=f"MFA verification failed: {user_info['email']}", email=user_info['email'])
             return False, f"MFA verification failed: {mfa_message}"
 
@@ -524,7 +549,7 @@ class AuthManager:
             # Verify current password
             provided_hash = self.hash_password(current_password, salt)
             if provided_hash != current_hash:
-                self.logger.log_activity(action="PASSPHRASE_CHANGE", status="failed", 
+                self.logger.log_activity(action="PASSPHRASE_CHANGE", status="failure", 
                                              details=f"Invalid current password for user: {email}", email=email)
                 return False, "Current password is incorrect"
             
@@ -647,7 +672,7 @@ class AuthManager:
             result = self.db.execute_query(query, (email.lower().strip(),), fetch=True)
             
             if not result:
-                self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failed", 
+                self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failure", 
                                              details=f"Account recovery attempted for non-existent email: {email}", email=email)
                 return False, "Email not found"
             
@@ -657,7 +682,7 @@ class AuthManager:
             stored_recovery_hash = user_data['recovery_code_hash']
             
             if not stored_recovery_hash:
-                self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failed", 
+                self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failure", 
                                              details=f"No recovery code set for user: {email}", email=email)
                 return False, "No recovery code available for this account"
             
@@ -665,7 +690,7 @@ class AuthManager:
             provided_recovery_hash = self.hash_recovery_code(recovery_code.strip().upper())
             
             if provided_recovery_hash != stored_recovery_hash:
-                self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failed", 
+                self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failure", 
                                              details=f"Invalid recovery code for user: {email}", email=email)
                 return False, "Invalid recovery code"
             
