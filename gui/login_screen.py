@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, 
                              QLabel, QLineEdit, QPushButton, QFormLayout,
-                             QGroupBox, QTextEdit)
+                             QGroupBox, QTextEdit, QInputDialog)
 from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtGui import QFont
 from .utils.dialogs import show_error, show_info, show_warning, RegistrationSuccessDialog
@@ -232,9 +232,16 @@ class LoginScreen(QWidget):
             show_error(self, "Recovery Error", "Passphrases do not match!")
             return
         
+        # Ask for old password to preserve existing keys
+        old_password, ok = QInputDialog.getText(
+            self, "Optional: Preserve Keys", 
+            "Enter your old password to preserve existing RSA keys\n(Leave empty to expire old keys):",
+            QLineEdit.Password
+        )
+        
         # Attempt recovery
         success, message = self.auth_manager.recover_account_with_code(
-            email, recovery_code, new_password
+            email, recovery_code, new_password, old_password if old_password else None
         )
         
         if success:

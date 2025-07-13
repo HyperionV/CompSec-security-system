@@ -137,7 +137,7 @@ class RegistrationSuccessDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Registration Successful")
         self.setModal(True)
-        self.setFixedSize(600, 380)  # Increased from 480x280 to prevent cutoffs
+        self.setFixedSize(600, 450)  # Increased from 480x280 to prevent cutoffs
         
         # Simple, clean styling
         self.setStyleSheet("""
@@ -218,21 +218,21 @@ class RegistrationSuccessDialog(QDialog):
             self.recovery_code_input.selectAll()
             layout.addWidget(self.recovery_code_input)
             
-            # Buttons - improved layout
-            button_layout = QHBoxLayout()
-            button_layout.setSpacing(15)
-            
-            copy_button = QPushButton("Copy")
+            # Copy button - centered layout
+            copy_button = QPushButton("Copy Code")
             copy_button.clicked.connect(self.copy_recovery_code)
-            copy_button.setStyleSheet("background-color: #007acc; color: white; font-weight: bold; font-size: 12px;")
-            
-            save_button = QPushButton("Save to File")
-            save_button.clicked.connect(self.save_recovery_code)
-            save_button.setStyleSheet("font-size: 12px;")
-            
-            button_layout.addWidget(copy_button)
-            button_layout.addWidget(save_button)
-            layout.addLayout(button_layout)
+            copy_button.setStyleSheet("""
+                background-color: #007acc; 
+                color: white; 
+                font-weight: bold; 
+                font-size: 12px;
+                padding: 10px 20px;
+                border-radius: 5px;
+                border: none;
+                min-width: 120px;
+            """)
+            copy_button.setDefault(False)
+            layout.addWidget(copy_button)
         else:
             # Fallback: show full message if code extraction fails
             full_message_label = QLabel(message)
@@ -258,9 +258,12 @@ class RegistrationSuccessDialog(QDialog):
             background-color: #28a745; 
             color: white; 
             font-weight: bold; 
-            padding: 12px 30px; 
-            margin-top: 15px;
+            padding: 5px 15px; 
+            margin-top: 5px;
             font-size: 13px;
+            border: none;
+            border-radius: 3px;
+            min-width: 60px;
         """)
         layout.addWidget(ok_button)
         
@@ -276,10 +279,11 @@ class RegistrationSuccessDialog(QDialog):
         
         # More specific patterns to find the recovery code
         patterns = [
-            r'recovery code:\s*([A-Z0-9]{12,20})',    # Pattern with length constraint
-            r'code:\s*([A-Z0-9]{12,20})',            # Shorter pattern with length
-            r'\b([A-Z0-9]{16})\b',                    # Exact 16-character code
-            r'\b([A-Z0-9]{12,20})\b'                  # 12-20 character alphanumeric
+            r'recovery code:\s*([A-Z0-9_]{12,20})',    # Pattern with length constraint
+            r'code:\s*([A-Z0-9_]{12,20})',            # Shorter pattern with length
+            r'\b([A-Z0-9_]{16})\b',                    # Exact 16-character code
+            r'([A-Z0-9_]{12,20})',                     # 12-20 character alphanumeric with underscores
+            r'\b([A-Z0-9]{12,20})\b'                   # Fallback: 12-20 character alphanumeric only
         ]
         
         for i, pattern in enumerate(patterns):
@@ -290,7 +294,7 @@ class RegistrationSuccessDialog(QDialog):
                 code = match.upper()
                 # Validate it's not a common word and looks like a recovery code
                 if (len(code) >= 12 and 
-                    re.match(r'^[A-Z0-9]+$', code) and 
+                    re.match(r'^[A-Z0-9_]+$', code) and 
                     code not in ['REGISTRATION', 'SUCCESSFUL', 'GENERATED', 'READY']):
                     print(f"Valid recovery code found: {code}")
                     return code
@@ -313,43 +317,7 @@ class RegistrationSuccessDialog(QDialog):
             button = self.sender()
             QTimer.singleShot(1500, lambda: self.reset_button_text(button, original_text))
     
-    def save_recovery_code(self):
-        """Save recovery code to a text file"""
-        if hasattr(self, 'recovery_code_input'):
-            from PyQt5.QtWidgets import QFileDialog
-            
-            filename, _ = QFileDialog.getSaveFileName(
-                self, 
-                "Save Recovery Code", 
-                "recovery_code.txt", 
-                "Text Files (*.txt);;All Files (*)"
-            )
-            
-            if filename:
-                try:
-                    with open(filename, 'w') as f:
-                        f.write(f"Security Application - Recovery Code\n")
-                        f.write(f"Generated: {self.get_current_datetime()}\n")
-                        f.write(f"Recovery Code: {self.recovery_code_input.text()}\n\n")
-                        f.write("IMPORTANT: Keep this code secure and do not share it.\n")
-                        f.write("You will need this code to recover your account if you forget your passphrase.\n")
-                    
-                    # Show confirmation
-                    original_text = self.sender().text()
-                    self.sender().setText("Saved!")
-                    
-                    from PyQt5.QtCore import QTimer
-                    button = self.sender()
-                    QTimer.singleShot(1500, lambda: self.reset_button_text(button, original_text))
-                    
-                except Exception as e:
-                    from PyQt5.QtWidgets import QMessageBox
-                    QMessageBox.critical(self, "Save Error", f"Failed to save file: {str(e)}")
-    
-    def get_current_datetime(self):
-        """Get current datetime as formatted string"""
-        from datetime import datetime
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     
     def reset_button_text(self, button, original_text):
         """Safely reset button text, checking if button still exists"""

@@ -610,10 +610,34 @@ class AuthManager:
                                          details=f"Passphrase change failed for user ID {user_id}: {str(e)}", email=self.db.get_user_email_by_id(user_id))
             return False, f"Passphrase change failed: {str(e)}"
     
+    def validate_user_passphrase(self, user_id: int, passphrase: str) -> Tuple[bool, str]:
+        """Validate passphrase against user's account password"""
+        try:
+            query = "SELECT password_hash, salt FROM users WHERE id = ?"
+            result = self.db.execute_query(query, (user_id,), fetch=True)
+            
+            if not result:
+                return False, "User not found"
+            
+            user_data = result[0]
+            stored_hash = user_data['password_hash']
+            salt = user_data['salt']
+            
+            # Hash the provided passphrase with the stored salt
+            provided_hash = self.hash_password(passphrase, salt)
+            
+            if provided_hash == stored_hash:
+                return True, "Passphrase valid"
+            else:
+                return False, "Invalid passphrase"
+                
+        except Exception as e:
+            return False, f"Passphrase validation failed: {str(e)}"
+
     def generate_new_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str]:
         """Generate new RSA keys for existing user"""
         try:
-            # Verify user exists
+            # Verify user exists and validate passphrase
             query = "SELECT email FROM users WHERE id = ?"
             result = self.db.execute_query(query, (user_id,), fetch=True)
             
@@ -621,6 +645,13 @@ class AuthManager:
                 return False, "User not found"
             
             email = result[0]['email']
+            
+            # Validate passphrase before generating keys
+            passphrase_valid, passphrase_msg = self.validate_user_passphrase(user_id, passphrase)
+            if not passphrase_valid:
+                self.logger.log_activity(action="KEY_GENERATION", status="failure", 
+                                             details=f"Invalid passphrase for key generation: {email}", email=email)
+                return False, "Invalid passphrase"
             
             # Generate new keys
             key_success, key_message, key_data = self.key_manager.create_user_keys(user_id, passphrase)
@@ -633,7 +664,7 @@ class AuthManager:
                 return False, key_message
                 
         except Exception as e:
-            self.logger.log_activity(action="KEY_GENERATION", status="error", 
+            self.logger.log_activity(action="KEY_GENERATION", status="failure", 
                                          details=f"Key generation failed for user ID {user_id}: {str(e)}", email=self.db.get_user_email_by_id(user_id))
             return False, f"Key generation failed: {str(e)}"
     
@@ -649,6 +680,13 @@ class AuthManager:
             
             email = result[0]['email']
             
+            # Validate passphrase before renewing keys
+            passphrase_valid, passphrase_msg = self.validate_user_passphrase(user_id, passphrase)
+            if not passphrase_valid:
+                self.logger.log_activity(action="KEY_RENEWAL", status="failure", 
+                                             details=f"Invalid passphrase for key renewal: {email}", email=email)
+                return False, "Invalid passphrase"
+            
             # Renew keys using key manager
             renew_success, renew_message, new_key_data = self.key_manager.renew_user_keys(user_id, passphrase)
             
@@ -660,15 +698,15 @@ class AuthManager:
                 return False, renew_message
                 
         except Exception as e:
-            self.logger.log_activity(action="KEY_RENEWAL", status="error", 
+            self.logger.log_activity(action="KEY_RENEWAL", status="failure", 
                                          details=f"Key renewal failed for user ID {user_id}: {str(e)}", email=self.db.get_user_email_by_id(user_id))
             return False, f"Key renewal failed: {str(e)}"
 
-    def recover_account_with_code(self, email: str, recovery_code: str, new_password: str) -> Tuple[bool, str]:
+    def recover_account_with_code(self, email: str, recovery_code: str, new_password: str, old_password: str = None) -> Tuple[bool, str]:
         """Recover account using recovery code"""
         try:
-            # Get user information
-            query = "SELECT id, email, recovery_code_hash FROM users WHERE email = ?"
+            # Get user information including current password data
+            query = "SELECT id, email, recovery_code_hash, password_hash, salt FROM users WHERE email = ?"
             result = self.db.execute_query(query, (email.lower().strip(),), fetch=True)
             
             if not result:
@@ -680,6 +718,8 @@ class AuthManager:
             user_id = user_data['id']
             user_email = user_data['email']
             stored_recovery_hash = user_data['recovery_code_hash']
+            current_password_hash = user_data['password_hash']
+            current_salt = user_data['salt']
             
             if not stored_recovery_hash:
                 self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failure", 
@@ -704,32 +744,83 @@ class AuthManager:
             new_password_hash = self.hash_password(new_password, new_salt)
             
             # Check if user has keys that need re-encryption
-            key_success, key_msg, user_keys = self.db.get_user_keys_by_id(user_id)
+            user_keys = self.db.get_user_keys_by_id(user_id)
             
-            # Note: For recovery, we can't decrypt existing keys since we don't have the old passphrase
-            # The user will need to generate new keys after recovery
-            if key_success and user_keys:
-                # Mark existing keys as expired since we can't decrypt them
-                for key_record in user_keys:
-                    if key_record['status'] == 'valid':
-                        expire_query = "UPDATE user_keys SET status = 'expired' WHERE id = ?"
-                        self.db.execute_query(expire_query, (key_record['id'],))
-            
-            # Update user password and invalidate recovery code
-            query = """
-                UPDATE users 
-                SET password_hash = ?, salt = ?, recovery_code_hash = NULL 
-                WHERE id = ?
-            """
-            self.db.execute_query(query, (new_password_hash, new_salt, user_id))
-            
-            self.logger.log_activity(action="ACCOUNT_RECOVERY", status="success", 
-                                         details=f"Account recovered for user: {email}", email=email)
-            
-            return True, "Account recovered successfully. Please generate new RSA keys as your old keys have been invalidated for security."
+            if user_keys and user_keys['status'] in ['valid', 'expiring']:
+                # If old password is provided, try to re-encrypt the key
+                if old_password:
+                    try:
+                        # Verify old password
+                        old_password_hash = self.hash_password(old_password, current_salt)
+                        if old_password_hash == current_password_hash:
+                            # Decrypt existing key with old password
+                            old_encrypted_key_json = user_keys['encrypted_private_key']
+                            encrypted_key_dict = json.loads(old_encrypted_key_json)
+                            
+                            decrypt_success, decrypt_message, private_key_obj = self.key_manager.decrypt_private_key(
+                                encrypted_key_dict, old_password
+                            )
+                            
+                            if decrypt_success:
+                                # Re-encrypt with new password
+                                encrypt_success, encrypt_message, new_encrypted_key_data = self.key_manager.encrypt_private_key(
+                                    private_key_obj, new_password, user_email
+                                )
+                                
+                                if encrypt_success:
+                                    # Update key in database
+                                    self.db.update_key_encrypted_private_key(
+                                        user_keys['id'], json.dumps(new_encrypted_key_data)
+                                    )
+                                    
+                                    self.logger.log_activity(action="ACCOUNT_RECOVERY", status="success", 
+                                                                 details=f"Account recovered with key re-encryption for user: {email}", email=email)
+                                    
+                                    # Update user password and invalidate recovery code
+                                    query = """
+                                        UPDATE users 
+                                        SET password_hash = ?, salt = ?, recovery_code_hash = NULL 
+                                        WHERE id = ?
+                                    """
+                                    self.db.execute_query(query, (new_password_hash, new_salt, user_id))
+                                    
+                                    return True, "Account recovered successfully. Your existing RSA keys have been re-encrypted with the new password."
+                    except Exception as e:
+                        self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failure", 
+                                                     details=f"Key re-encryption failed during recovery: {str(e)}", email=email)
+                
+                # If old password not provided or re-encryption failed, expire the keys
+                expire_query = "UPDATE keys SET status = 'expired' WHERE id = ?"
+                self.db.execute_query(expire_query, (user_keys['id'],))
+                
+                self.logger.log_activity(action="ACCOUNT_RECOVERY", status="success", 
+                                             details=f"Account recovered with key expiration for user: {email}", email=email)
+                
+                # Update user password and invalidate recovery code
+                query = """
+                    UPDATE users 
+                    SET password_hash = ?, salt = ?, recovery_code_hash = NULL 
+                    WHERE id = ?
+                """
+                self.db.execute_query(query, (new_password_hash, new_salt, user_id))
+                
+                return True, "Account recovered successfully. Your old RSA keys have been expired for security. Please generate new keys."
+            else:
+                # No existing keys, just update password
+                query = """
+                    UPDATE users 
+                    SET password_hash = ?, salt = ?, recovery_code_hash = NULL 
+                    WHERE id = ?
+                """
+                self.db.execute_query(query, (new_password_hash, new_salt, user_id))
+                
+                self.logger.log_activity(action="ACCOUNT_RECOVERY", status="success", 
+                                             details=f"Account recovered for user: {email}", email=email)
+                
+                return True, "Account recovered successfully."
             
         except Exception as e:
-            self.logger.log_activity(action="ACCOUNT_RECOVERY", status="error", 
+            self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failure", 
                                          details=f"Account recovery failed for {email}: {str(e)}", email=email)
             return False, f"Account recovery failed: {str(e)}"
     

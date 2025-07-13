@@ -1750,9 +1750,15 @@ def handle_account_recovery():
             input("\nPress Enter to continue...")
             return
         
+        # Ask for old password to preserve existing keys
+        print("\n🔑 OPTIONAL: Preserve Existing Keys")
+        print("Enter your old password to preserve existing RSA keys.")
+        print("Leave empty to expire old keys and generate new ones.")
+        old_passphrase = getpass.getpass("Old Password (optional): ")
+        
         print("\n🔄 Processing account recovery...")
         success, message = auth_manager.recover_account_with_code(
-            email, recovery_code, new_passphrase
+            email, recovery_code, new_passphrase, old_passphrase if old_passphrase else None
         )
         
         if success:
