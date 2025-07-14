@@ -110,6 +110,19 @@ class FileOperationsTab(QWidget):
         
         decrypt_layout.addRow("Encrypted File:", decrypt_file_select_layout)
         
+        # Key file selection for Feature 16
+        decrypt_key_file_select_layout = QHBoxLayout()
+        self.decrypt_key_file_input = QLineEdit()
+        self.decrypt_key_file_input.setPlaceholderText("Optional: select key file if separate...")
+        self.decrypt_key_file_input.setReadOnly(True)
+        decrypt_key_file_select_layout.addWidget(self.decrypt_key_file_input)
+        
+        self.select_decrypt_key_file_button = QPushButton("Browse")
+        self.select_decrypt_key_file_button.clicked.connect(self.select_key_file_to_decrypt)
+        decrypt_key_file_select_layout.addWidget(self.select_decrypt_key_file_button)
+        
+        decrypt_layout.addRow("Key File (optional):", decrypt_key_file_select_layout)
+        
         # Decrypt button
         self.decrypt_button = QPushButton("Decrypt File")
         self.decrypt_button.clicked.connect(self.decrypt_file)
@@ -168,6 +181,13 @@ class FileOperationsTab(QWidget):
                                 "Encrypted Files (*.enc);;All Files (*)")
         if filename:
             self.decrypt_file_input.setText(filename)
+    
+    def select_key_file_to_decrypt(self):
+        """Select a separate .key file to decrypt"""
+        filename = get_open_file(self, "Select Key File", 
+                                "Key Files (*.key);;All Files (*)")
+        if filename:
+            self.decrypt_key_file_input.setText(filename)
     
     def refresh_recipients(self):
         """Refresh the recipients list"""
@@ -241,6 +261,8 @@ class FileOperationsTab(QWidget):
     def decrypt_file(self):
         """Decrypt the selected file"""
         input_file = self.decrypt_file_input.text().strip()
+        key_file = self.decrypt_key_file_input.text().strip() or None # Get key file path or None
+
         if not input_file:
             show_warning(self, "No File Selected", "Please select an encrypted file to decrypt.")
             return
@@ -249,37 +271,37 @@ class FileOperationsTab(QWidget):
         # if input_file.lower().endswith('.enc'):
         #     suggested_output = input_file[:-4]  # Remove .enc extension
         # else:
-        #     suggested_output = input_file + '_decrypted'
-        
-        # Get output location (no longer directly passed to worker, handled by file_crypto)
-        # output_file = get_save_file(self, "Save Decrypted File", "All Files (*)")
+        #     suggested_output = f"{input_file}.decrypted"
+            
+        # Get output location
+        # output_file = get_save_file(self, "Save Decrypted File", 
+        #                           f"Decrypted Files (*.{suggested_output.split('.')[-1]})")
         # if not output_file:
         #     return
         
-        # Prompt for passphrase for decryption
-        password_dialog = PasswordDialog("Decrypt File", "Enter your account passphrase:", self)
-        if password_dialog.exec_() != password_dialog.Accepted:
-            return
-        
-        passphrase = password_dialog.get_password()
-        if not passphrase:
-            show_error(self, "Error", "Passphrase is required.")
+        # Get user's passphrase for private key
+        dialog = PasswordDialog(
+            parent=self,
+            title="Enter Passphrase",
+            prompt="Please enter your passphrase to decrypt the file."
+        )
+        if dialog.exec_():
+            passphrase = dialog.get_password()
+        else:
             return
 
-        # Confirm operation
-        if not show_question(self, "Decrypt File", 
-                           f"Decrypt '{input_file}'?"):
+        if not show_question(self, "Decrypt File", f"Decrypt '{input_file}'?"):
             return
-        
+            
         # Start decryption in background thread
         self.show_progress("Preparing to decrypt file...", 0)
         
         self.worker = FileOperationWorker(
             'decrypt', self.file_crypto,
-            encrypted_file_path=input_file, # Use correct parameter name
-            user_id=self.user_session.user_info['id'],
+            encrypted_file_path=input_file,
+            key_file_path=key_file,
             passphrase=passphrase,
-            key_file_path=None # Assuming combined format for now, or add UI for separate
+            user_id=self.user_session.user_info['id']
         )
         self.worker.progress_updated.connect(self.update_progress)
         self.worker.operation_completed.connect(self.decryption_completed)

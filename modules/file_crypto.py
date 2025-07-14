@@ -389,7 +389,9 @@ class FileCrypto:
     def decrypt_file(self, encrypted_file_path: str, user_id: int, passphrase: str,
                     key_file_path: Optional[str] = None) -> Tuple[bool, str, Optional[Dict]]:
         """Decrypt a file using hybrid RSA+AES decryption with large file support"""
-        print(f"DEBUG: decrypt_file received: encrypted_file_path={encrypted_file_path}, user_id={user_id}, key_file_path={key_file_path}")
+        
+        user_email = db.get_user_email_by_id(user_id)
+        
         try:
             # Load encrypted file
             if not os.path.exists(encrypted_file_path):
@@ -407,17 +409,23 @@ class FileCrypto:
                 ciphertext_data = enc_data['ciphertext']
             else:
                 # Separate format - need key file
-                if not key_file_path or not os.path.exists(key_file_path):
-                    return False, "Key file required for separate format", None
-                
-                with open(key_file_path, 'r') as f:
+                key_path = key_file_path
+                if not key_path:
+                    # If key_file_path is not provided, try to find it automatically
+                    base_name = Path(encrypted_file_path).stem
+                    key_path = Path(encrypted_file_path).parent / f"{base_name}.key"
+
+                if not key_path or not os.path.exists(key_path):
+                    return False, "Key file not found. Please provide a key file for separate format files.", None
+
+                with open(key_path, 'r') as f:
                     key_data = json.load(f)
-                
+
                 metadata = enc_data['metadata']
-                nonce_hex = enc_data['nonce']
+                nonce_hex = enc_data.get('nonce') # Nonce might not exist in older separate files
                 encrypted_session_key = bytes.fromhex(key_data['encrypted_session_key'])
                 ciphertext_data = enc_data['ciphertext']
-            
+
             # Check if this is a large file
             is_large_file = metadata.get('is_large_file', False)
             
