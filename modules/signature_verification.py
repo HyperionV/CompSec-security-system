@@ -23,10 +23,7 @@ class SignatureVerification:
             
             if not os.path.isfile(signature_path):
                 return False, "Signature file not found"
-            
-            print(f"DEBUG: Verifying file: {file_path}")
-            print(f"DEBUG: With signature: {signature_path}")
-            
+
             metadata, signature_bytes = self._parse_signature_file(signature_path)
             if not metadata or not signature_bytes:
                 return False, "Invalid signature file format"
@@ -39,15 +36,14 @@ class SignatureVerification:
             hash_obj = hashlib.sha256(file_data)
             file_hash_hex = hash_obj.hexdigest()
             
-            print(f"DEBUG: File to verify: {file_path}")
-            print(f"DEBUG: Calculated hash (hex): {file_hash_hex}")
-            print(f"DEBUG: Expected hash from signature: {metadata.get('file_hash', 'Not found')}")
-            print(f"DEBUG: File data length: {len(file_data)} bytes")
-            print(f"DEBUG: Signature length: {len(signature_bytes)} bytes")
+            # print(f"DEBUG: File to verify: {file_path}")
+            # print(f"DEBUG: Calculated hash (hex): {file_hash_hex}")
+            # print(f"DEBUG: Expected hash from signature: {metadata.get('file_hash', 'Not found')}")
+            # print(f"DEBUG: File data length: {len(file_data)} bytes")
+            # print(f"DEBUG: Signature length: {len(signature_bytes)} bytes")
             
             # Check if the calculated hash matches the one in the signature metadata
             if file_hash_hex != metadata.get('file_hash'):
-                print("DEBUG: Hash mismatch! File may have been modified.")
                 security_logger.log_activity(
                     action='signature_verification',
                     status='failure',
@@ -58,7 +54,6 @@ class SignatureVerification:
             
             # Try direct verification with the signer's key if they are the current user
             if metadata.get('signer_email') == self.user_email:
-                print("DEBUG: Signer is current user, trying direct verification with user's key")
                 direct_result = self._try_direct_verification(file_data, signature_bytes)
                 if direct_result:
                     success_msg = f"Signature verified! Signed by: {metadata['signer_email']} on {metadata['timestamp']}"
@@ -90,7 +85,6 @@ class SignatureVerification:
                         ),
                         hashes.SHA256()
                     )
-                    print(f"DEBUG: Verification SUCCESSFUL with key from {key_owner}")
                     success_msg = f"Signature verified! Signed by: {metadata['signer_email']} on {metadata['timestamp']}"
                     security_logger.log_activity(
                         action='signature_verification',
@@ -100,10 +94,8 @@ class SignatureVerification:
                     )
                     return True, success_msg
                 except InvalidSignature:
-                    print(f"DEBUG: InvalidSignature with key from {key_owner}")
                     continue
                 except Exception as e:
-                    print(f"DEBUG: Exception during verification with key from {key_owner}: {type(e).__name__}: {str(e)}")
                     continue
             
             security_logger.log_activity(
@@ -144,9 +136,7 @@ class SignatureVerification:
             # Load the public key
             try:
                 public_key = serialization.load_pem_public_key(public_key_pem.encode())
-                print(f"DEBUG: Loaded public key for direct verification, length: {len(public_key_pem)}")
             except Exception as e:
-                print(f"DEBUG: Error loading public key: {type(e).__name__}: {str(e)}")
                 return False, f"Error loading public key: {str(e)}"
             
             # Verify the signature
@@ -160,17 +150,13 @@ class SignatureVerification:
                     ),
                     hashes.SHA256()
                 )
-                print("DEBUG: Direct verification successful!")
                 return True, "Signature verified successfully"
             except InvalidSignature:
-                print("DEBUG: Direct verification failed: Invalid signature")
                 return False, "Invalid signature"
             except Exception as e:
-                print(f"DEBUG: Error during direct verification: {type(e).__name__}: {str(e)}")
                 return False, f"Verification error: {str(e)}"
                 
         except Exception as e:
-            print(f"DEBUG: Exception in verify_directly: {type(e).__name__}: {str(e)}")
             return False, f"Verification error: {str(e)}"
     
     def _try_direct_verification(self, file_data, signature_bytes):
@@ -178,17 +164,11 @@ class SignatureVerification:
         try:
             user_id = self.database.get_user_id(self.user_email)
             if not user_id:
-                print("DEBUG: User ID not found for direct verification")
                 return False
             
             user_key = self.database.get_user_public_key(user_id)
             if not user_key:
-                print("DEBUG: User public key not found for direct verification")
-                return False
-            
-            print(f"DEBUG: Got user public key for direct verification, length: {len(user_key)}")
-            print(f"DEBUG: Key starts with: {user_key[:50]}...")
-            
+                return False            
             public_key = serialization.load_pem_public_key(user_key.encode())
             
             # Try verification with different approaches
@@ -203,53 +183,41 @@ class SignatureVerification:
                     ),
                     hashes.SHA256()
                 )
-                print("DEBUG: Direct verification successful with approach 1")
                 return True
             except Exception as e1:
                 print(f"DEBUG: Direct verification approach 1 failed: {type(e1).__name__}: {str(e1)}")
             
             return False
         except Exception as e:
-            print(f"DEBUG: Error in direct verification: {type(e).__name__}: {str(e)}")
             return False
     
     def _parse_signature_file(self, signature_path):
         try:
-            print(f"DEBUG: Parsing signature file: {signature_path}")
             with open(signature_path, 'rb') as f:
                 content = f.read()
-            
-            print(f"DEBUG: Signature file size: {len(content)} bytes")
-            
+                        
             # Look for the delimiter with newline to ensure exact matching
             delimiter = b"---SIGNATURE---\n"
             if delimiter not in content:
                 # Try without newline as fallback
                 delimiter = b"---SIGNATURE---"
                 if delimiter not in content:
-                    print("DEBUG: Signature delimiter not found in file")
                     return None, None
             
             parts = content.split(delimiter, 1)
             if len(parts) != 2:
-                print("DEBUG: Incorrect number of parts after splitting")
                 return None, None
             
             metadata_json = parts[0].decode('utf-8')
             signature_bytes = parts[1].strip()  # Strip any trailing whitespace
-            
-            print(f"DEBUG: Metadata length: {len(metadata_json)}, Signature length: {len(signature_bytes)}")
-            
+                        
             try:
                 metadata = json.loads(metadata_json)
-                print(f"DEBUG: Parsed metadata: {metadata}")
                 return metadata, signature_bytes
             except json.JSONDecodeError as e:
-                print(f"DEBUG: JSON decode error: {e}")
                 return None, None
                 
         except (IOError, UnicodeDecodeError) as e:
-            print(f"DEBUG: Error reading signature file: {type(e).__name__}: {str(e)}")
             return None, None
     
     def _calculate_file_hash(self, file_path):
@@ -258,8 +226,6 @@ class SignatureVerification:
             while chunk := f.read(8192):
                 hash_sha256.update(chunk)
         result = hash_sha256.digest()
-        print(f"DEBUG: Calculated file hash (hex): {hash_sha256.hexdigest()}")
-        print(f"DEBUG: Calculated file hash (bytes): {len(result)} bytes")
         return result
     
     def _get_all_public_keys(self):
@@ -268,12 +234,9 @@ class SignatureVerification:
         # Get user's own public key
         user_id = self.database.get_user_id(self.user_email)
         if user_id:
-            print(f"DEBUG: Getting public key for user ID: {user_id}, email: {self.user_email}")
             user_key = self.database.get_user_public_key(user_id)
             if user_key:
                 try:
-                    print(f"DEBUG: Found user's own public key, length: {len(user_key)}")
-                    print(f"DEBUG: Key starts with: {user_key[:50]}...")
                     public_key = serialization.load_pem_public_key(user_key.encode())
                     public_keys.append({
                         'key': public_key,
@@ -288,14 +251,11 @@ class SignatureVerification:
         
         # Get all imported public keys
         imported_keys = self.database.get_all_public_keys()
-        print(f"DEBUG: Found {len(imported_keys)} imported public keys")
         
         for key_record in imported_keys:
             try:
                 email = key_record.get('email')
                 key_data = key_record.get('public_key')
-                print(f"DEBUG: Processing imported key for: {email}, length: {len(key_data)}")
-                print(f"DEBUG: Key starts with: {key_data[:50]}...")
                 
                 public_key = serialization.load_pem_public_key(key_data.encode())
                 public_keys.append({
@@ -306,5 +266,4 @@ class SignatureVerification:
                 print(f"DEBUG: Error loading imported public key: {type(e).__name__}: {str(e)}")
                 continue
         
-        print(f"DEBUG: Total public keys loaded: {len(public_keys)}")
         return public_keys 

@@ -23,10 +23,6 @@ class LoginScreen(QWidget):
         title_label.setFont(title_font)
         layout.addWidget(title_label)
         
-        subtitle_label = QLabel("Cryptographic System with RSA Key Management")
-        subtitle_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(subtitle_label)
-        
         # Tab widget
         self.tab_widget = QTabWidget()
         self.tab_widget.addTab(self.create_login_tab(), "Login")
@@ -232,22 +228,13 @@ class LoginScreen(QWidget):
             show_error(self, "Recovery Error", "Passphrases do not match!")
             return
         
-        # Ask for old password to preserve existing keys
-        old_password, ok = QInputDialog.getText(
-            self, "Optional: Preserve Keys", 
-            "Enter your old password to preserve existing RSA keys\n(Leave empty to expire old keys):",
-            QLineEdit.Password
-        )
-        
         # Attempt recovery
         success, message = self.auth_manager.recover_account_with_code(
-            email, recovery_code, new_password, old_password if old_password else None
+            email, recovery_code, new_password
         )
         
         if success:
-            show_info(self, "Recovery Successful", 
-                     f"{message}\n\nNext Steps:\n1. Login with your new passphrase\n"
-                     "2. Generate new RSA keys\n3. Export your new public key")
+            show_info(self, "Recovery Successful", message)
             self.clear_recovery_form()
             self.tab_widget.setCurrentIndex(0)  # Switch to login tab
         else:

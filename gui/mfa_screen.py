@@ -240,7 +240,7 @@ class MFAScreen(QWidget):
                 self.otp_sent = True
                 self.otp_status_label.setText(
                     f"OTP sent to {self.user_info['email']}\n"
-                    f"For testing: {otp_data['otp_code']}\n"
+                    f"{otp_data['otp_code']}\n"
                     "Code expires in 5 minutes."
                 )
                 self.otp_status_label.setStyleSheet("color: green;")

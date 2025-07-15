@@ -672,7 +672,6 @@ class FileCrypto:
                 details=f'Decryption failed: {type(e).__name__}: {str(e)}',
                 email=user_email
             )
-            print(f"DEBUG: Decryption failed in file_crypto.py: {type(e).__name__}: {str(e)}")
             return False, f"Decryption failed: {str(e)}", None
 
 # Create global instance

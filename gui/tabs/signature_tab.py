@@ -179,8 +179,6 @@ class SignatureTab(QWidget):
             return
         
         try:
-            print(f"DEBUG: Verifying file: {original_file}")
-            print(f"DEBUG: With signature: {signature_file}")
             
             # Verify signature
             success, message = self.signature_verification.verify_signature(
@@ -195,30 +193,25 @@ class SignatureTab(QWidget):
                 self.results_text.setText(f"✓ VERIFICATION SUCCESSFUL\n\n{message}")
                 
                 # Parse signature file to extract metadata for display
-                try:
-                    import json
-                    with open(signature_file, 'rb') as f:
-                        content = f.read()
+                import json
+                with open(signature_file, 'rb') as f:
+                    content = f.read()
+                
+                if b"---SIGNATURE---" in content:
+                    metadata_json = content.split(b"---SIGNATURE---", 1)[0].decode('utf-8')
+                    metadata = json.loads(metadata_json)
                     
-                    if b"---SIGNATURE---" in content:
-                        metadata_json = content.split(b"---SIGNATURE---", 1)[0].decode('utf-8')
-                        metadata = json.loads(metadata_json)
-                        
-                        # Add metadata details to results
-                        self.results_text.append("\n\nSignature Details:")
-                        self.results_text.append(f"• Signer: {metadata.get('signer_email', 'Unknown')}")
-                        self.results_text.append(f"• Date: {metadata.get('timestamp', 'Unknown')}")
-                        self.results_text.append(f"• File: {metadata.get('original_filename', 'Unknown')}")
-                        self.results_text.append(f"• Hash: {metadata.get('file_hash', 'Unknown')}")
-                except Exception as e:
-                    # If metadata parsing fails, just show the success message
-                    print(f"DEBUG: Error parsing metadata: {e}")
+                    # Add metadata details to results
+                    self.results_text.append("\n\nSignature Details:")
+                    self.results_text.append(f"• Signer: {metadata.get('signer_email', 'Unknown')}")
+                    self.results_text.append(f"• Date: {metadata.get('timestamp', 'Unknown')}")
+                    self.results_text.append(f"• File: {metadata.get('original_filename', 'Unknown')}")
+                    self.results_text.append(f"• Hash: {metadata.get('file_hash', 'Unknown')}")
             else:
                 self.results_text.setStyleSheet("color: red;")
                 self.results_text.setText(f"❌ VERIFICATION ERROR\n\n{message}")
-            
+        
         except Exception as e:
-            print(f"DEBUG: Exception in verify_signature UI method: {type(e).__name__}: {str(e)}")
             self.results_text.setStyleSheet("color: red;")
             self.results_text.setText(f"❌ VERIFICATION ERROR\n\nFailed to verify signature: {str(e)}")
     

@@ -106,22 +106,17 @@ class DatabaseManager:
         """Update user password and salt"""
         query = "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?"
         return self.execute_query(query, (password_hash, salt, user_id))
-    
-    def create_recovery_code(self, user_id, recovery_code_hash):
-        """Store recovery code for user"""
-        query = "INSERT INTO recovery_codes (user_id, recovery_code_hash) VALUES (?, ?)"
-        return self.execute_query(query, (user_id, recovery_code_hash))
-    
-    def verify_recovery_code(self, user_id, recovery_code_hash):
-        """Verify recovery code and mark as used"""
-        # Check if recovery code exists and hasn't been used
-        query = "SELECT id FROM recovery_codes WHERE user_id = ? AND recovery_code_hash = ? AND used_at IS NULL"
+
+    def verify_recovery_code(self, user_id: int, recovery_code_hash: str) -> bool:
+        """Verify recovery code from the users table and mark it as used."""
+        # Check if the recovery code hash matches the one in the users table
+        query = "SELECT id FROM users WHERE id = ? AND recovery_code_hash = ?"
         result = self.execute_query(query, (user_id, recovery_code_hash), fetch=True)
-        
+
         if result:
-            # Mark recovery code as used
-            update_query = "UPDATE recovery_codes SET used_at = datetime('now') WHERE id = ?"
-            self.execute_query(update_query, (result[0]['id'],))
+            # Invalidate the recovery code by setting it to NULL
+            update_query = "UPDATE users SET recovery_code_hash = NULL WHERE id = ?"
+            self.execute_query(update_query, (user_id,))
             return True
         return False
     

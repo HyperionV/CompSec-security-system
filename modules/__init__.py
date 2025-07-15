@@ -1,4 +1,3 @@
-# Security Application Modules Package
 
 from .auth import auth_manager
 from .mfa import mfa_manager

@@ -20,17 +20,13 @@ class DigitalSignature:
     
     def sign_file(self, file_path, passphrase):
         try:
-            print(f"DEBUG: sign_file invoked for path={file_path} email={self.user_email}")
             if not os.path.isfile(file_path):
-                print("DEBUG: File not found on disk")
                 return False, "File not found"
 
             # Retrieve and decrypt private key
             private_key = self.key_manager.get_private_key(self.user_email, passphrase)
             if not private_key:
-                print("DEBUG: key_manager.get_private_key returned None")
                 return False, "Failed to decrypt private key"
-            print("DEBUG: Private key successfully decrypted")
 
             # Read the file data
             with open(file_path, 'rb') as f:
@@ -39,11 +35,8 @@ class DigitalSignature:
             # Calculate file hash for metadata
             hash_obj = hashlib.sha256(file_data)
             file_hash_hex = hash_obj.hexdigest()
-            print(f"DEBUG: File hash for signing (hex): {file_hash_hex}")
-            print(f"DEBUG: File data length: {len(file_data)} bytes")
 
             # Attempt to sign the file data directly
-            print("DEBUG: Starting RSA-PSS signing")
             signature = private_key.sign(
                 file_data,  # Sign the file data directly
                 padding.PSS(
@@ -52,7 +45,6 @@ class DigitalSignature:
                 ),
                 hashes.SHA256()
             )
-            print("DEBUG: File signed successfully, len(signature)=", len(signature))
 
             filename = os.path.basename(file_path)
             metadata = self._create_signature_metadata(filename, file_hash_hex)
@@ -68,7 +60,6 @@ class DigitalSignature:
             return True, sig_file_path
 
         except Exception as e:
-            print("DEBUG: Exception in sign_file:", type(e).__name__, str(e))
             security_logger.log_activity(
                 action='file_sign_error',
                 status='failure',
@@ -102,15 +93,10 @@ class DigitalSignature:
         base_name = os.path.splitext(filename)[0]
         sig_filename = f"{base_name}_{timestamp}.sig"
         sig_file_path = os.path.join(self.signatures_dir, sig_filename)
-        
-        print(f"DEBUG: Saving signature to: {sig_file_path}")
-        print(f"DEBUG: Signature length: {len(signature)} bytes")
-        
         with open(sig_file_path, 'wb') as f:
             metadata_json = json.dumps(metadata, indent=2)
             f.write(metadata_json.encode('utf-8'))
             f.write(b'\n---SIGNATURE---\n')
             f.write(signature)
         
-        print(f"DEBUG: Signature file saved, total size: {os.path.getsize(sig_file_path)} bytes")
         return sig_file_path 

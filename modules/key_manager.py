@@ -155,11 +155,6 @@ class KeyManager:
             nonce = base64.b64decode(encrypted_data['nonce'])
             ciphertext = base64.b64decode(encrypted_data['ciphertext'])
 
-            # Add debug info about the passphrase (safely)
-            print(f"DEBUG: Passphrase in decrypt_private_key - length: {len(passphrase)}")
-            print(f"DEBUG: First character: '{passphrase[0]}', Last character: '{passphrase[-1]}'")
-            if len(passphrase) > 2:
-                print(f"DEBUG: Second character: '{passphrase[1]}', Second-to-last character: '{passphrase[-2]}'")
 
             # Derive AES key using stored parameters
             kdf = PBKDF2HMAC(
@@ -171,7 +166,6 @@ class KeyManager:
             )
             aes_key = kdf.derive(passphrase.encode('utf-8'))
 
-            print(f"DEBUG: Decrypt private key - salt_len={len(salt)}, nonce_len={len(nonce)}, ciphertext_len={len(ciphertext)}, aes_key_len={len(aes_key)}, iterations={encrypted_data['iterations']}")
 
             # Decrypt private key
             aesgcm = AESGCM(aes_key)
@@ -213,7 +207,7 @@ class KeyManager:
                 details=f'Private key decryption failed: {type(e).__name__}: {str(e)}',
                 email=user_email
             )
-            print(f"DEBUG: Private key decryption failed in key_manager.py: {type(e).__name__}: {str(e)}")
+            # print(f"DEBUG: Private key decryption failed in key_manager.py: {type(e).__name__}: {str(e)}")
             return False, f"Private key decryption failed: {str(e)}", None
     
     def create_user_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str, Optional[Dict]]:
@@ -291,7 +285,7 @@ class KeyManager:
         try:
             # Convert encrypted_private_key dict to JSON string for storage
             encrypted_key_json = json.dumps(encrypted_private_key)
-            print(f"DEBUG: Storing encrypted key JSON: {encrypted_key_json}")
+            # print(f"DEBUG: Storing encrypted key JSON: {encrypted_key_json}")
             
             # Insert into keys table
             query = """
@@ -331,7 +325,7 @@ class KeyManager:
             key_data = result[0]
             
             # Parse encrypted private key JSON
-            print(f"DEBUG: Retrieved encrypted key data from DB: {key_data['encrypted_private_key']}")
+            # print(f"DEBUG: Retrieved encrypted key data from DB: {key_data['encrypted_private_key']}")
             encrypted_private_key = json.loads(key_data['encrypted_private_key'])
             
             key_info = {
@@ -437,6 +431,26 @@ class KeyManager:
                 email=None  # System operation
             )
             return False
+
+    def expire_all_user_keys(self, user_id: int):
+        """Expires all keys for a given user."""
+        try:
+            db.execute_query("UPDATE keys SET status = 'expired' WHERE user_id = ?", (user_id,))
+            security_logger.log_activity(
+                action='expire_all_user_keys',
+                status='success',
+                details=f'All keys for user_id {user_id} have been expired.',
+                user_id=user_id
+            )
+            return True, "All user keys expired successfully."
+        except Exception as e:
+            security_logger.log_activity(
+                action='expire_all_user_keys',
+                status='error',
+                details=f'Failed to expire all keys for user_id {user_id}: {e}',
+                user_id=user_id
+            )
+            return False, f"Failed to expire all user keys: {e}"
     
     def renew_user_keys(self, user_id: int, passphrase: str) -> Tuple[bool, str, Optional[Dict]]:
         """Generate new keys for user and mark old ones as expired"""
@@ -566,7 +580,7 @@ class KeyManager:
                 return None
                 
             key_record = key_records[0]
-            print(f"DEBUG: Retrieved encrypted key data from DB: {key_record['encrypted_private_key']}")
+            # print(f"DEBUG: Retrieved encrypted key data from DB: {key_record['encrypted_private_key']}")
 
             # Parse the encrypted_private_key JSON
             try:
