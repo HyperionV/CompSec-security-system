@@ -20,13 +20,9 @@
 ## How to Run
 
 1.  **Launch the Application:**
-    Once the admin user is created, you can start the main application:
-
     ```bash
     python main.py
     ```
-
-    Log in using the credentials of the admin user you just created. You will also be guided through a one-time setup for Multi-Factor Authentication (MFA).
 
 2.  **Create Admin User:**
     To create admin accounts, run the following command and follow the on-screen prompts:
