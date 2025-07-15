@@ -71,24 +71,7 @@ class PublicKeysTab(QWidget):
         
         table_group.setLayout(table_layout)
         layout.addWidget(table_group)
-        
-        # Information Section
-        info_group = QGroupBox("Public Key Management Information")
-        info_layout = QVBoxLayout()
-        
-        info_text = QLabel("""Public Key Management:
-• Public keys are used to encrypt files for specific recipients
-• Import public keys via QR codes or direct sharing
-• Search for keys by email address to find available recipients
-• All imported keys are stored securely for future use
-• Click QR Code button to view and share public keys""")
-        info_text.setWordWrap(True)
-        info_text.setStyleSheet("color: #666; font-style: italic;")
-        info_layout.addWidget(info_text)
-        
-        info_group.setLayout(info_layout)
-        layout.addWidget(info_group)
-        
+       
         layout.addStretch()
         self.setLayout(layout)
     

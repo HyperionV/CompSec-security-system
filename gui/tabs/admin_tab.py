@@ -26,10 +26,6 @@ class AdminTab(QWidget):
         admin_label.setStyleSheet("font-weight: bold; color: #d9534f;")
         info_layout.addWidget(admin_label)
         
-        warning_label = QLabel("⚠️ This is an administrative interface with elevated privileges.")
-        warning_label.setStyleSheet("color: #d9534f; font-style: italic;")
-        info_layout.addWidget(warning_label)
-        
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
         

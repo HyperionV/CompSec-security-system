@@ -149,23 +149,6 @@ class FileOperationsTab(QWidget):
         self.progress_group.hide()
         layout.addWidget(self.progress_group)
         
-        # Info Section
-        info_group = QGroupBox("File Operation Information")
-        info_layout = QVBoxLayout()
-        
-        info_text = QLabel("""File Encryption Information:
-• Files are encrypted using AES-256-GCM for security
-• RSA public keys encrypt the AES session keys
-• Large files (>5MB) are processed in chunks for efficiency
-• Encrypted files can be saved in combined (.enc) or separate (.enc + .key) format
-• Only the recipient's private key can decrypt the file""")
-        info_text.setWordWrap(True)
-        info_text.setStyleSheet("color: #666; font-style: italic;")
-        info_layout.addWidget(info_text)
-        
-        info_group.setLayout(info_layout)
-        layout.addWidget(info_group)
-        
         layout.addStretch()
         self.setLayout(layout)
     

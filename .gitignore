@@ -5,3 +5,6 @@ __pycache__/
 *.jpg
 
 *.png
+
+*.pem
+data/

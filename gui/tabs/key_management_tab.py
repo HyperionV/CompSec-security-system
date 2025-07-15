@@ -126,11 +126,6 @@ class KeyManagementTab(QWidget):
         
         actions_layout.addLayout(button_layout)
         
-        # Security info button
-        self.security_info_button = QPushButton("View Key Security Information")
-        self.security_info_button.clicked.connect(self.show_security_info)
-        actions_layout.addWidget(self.security_info_button)
-        
         actions_group.setLayout(actions_layout)
         layout.addWidget(actions_group)
         
@@ -449,44 +444,6 @@ class KeyManagementTab(QWidget):
         except Exception as e:
             self.hide_progress()
             show_error(self, "Error", f"Failed to renew keys: {str(e)}")
-    
-    def show_security_info(self):
-        """Show key security information"""
-        info_text = """RSA Key Security Information
-
-Key Algorithm: RSA-2048
-- RSA keys use 2048-bit key size for strong security
-- Public key is used for encryption and signature verification
-- Private key is used for decryption and digital signing
-
-Key Lifecycle:
-- Keys are valid for 90 days from creation
-- Warning notifications start 7 days before expiration
-- Expired keys should be renewed or regenerated
-- Old keys remain available for decrypting old files
-
-Security Best Practices:
-- Keep your passphrase secure and unique
-- Generate new keys periodically (every 90 days)
-- Back up important encrypted files before key changes
-- Export public keys via QR code for sharing
-- Never share your private key or passphrase
-
-Encryption Process:
-- Your public key encrypts data for you
-- Your private key decrypts data encrypted with your public key
-- Others' public keys encrypt data for them
-- Digital signatures prove authenticity and integrity
-
-Key Storage:
-- Private keys are encrypted with your passphrase
-- Public keys are stored for encryption operations
-- All keys are stored securely in the local database
-- Key metadata includes creation and expiration dates"""
-
-        from ..utils.dialogs import InfoDialog
-        dialog = InfoDialog("Key Security Information", info_text, self)
-        dialog.exec_()
     
     def show_progress(self, message, value):
         """Show progress bar with message"""

@@ -92,24 +92,7 @@ class SignatureTab(QWidget):
         
         results_group.setLayout(results_layout)
         layout.addWidget(results_group)
-        
-        # Information Section
-        info_group = QGroupBox("Digital Signature Information")
-        info_layout = QVBoxLayout()
-        
-        info_text = QLabel("""Digital Signature Information:
-• Digital signatures provide authentication and integrity verification
-• Your private key creates signatures that others can verify with your public key
-• Signatures prove that a file came from you and hasn't been tampered with
-• Signature files (.sig) contain the encrypted hash of the original file
-• Anyone with your public key can verify signatures you created""")
-        info_text.setWordWrap(True)
-        info_text.setStyleSheet("color: #666; font-style: italic;")
-        info_layout.addWidget(info_text)
-        
-        info_group.setLayout(info_layout)
-        layout.addWidget(info_group)
-        
+
         layout.addStretch()
         self.setLayout(layout)
     
