@@ -133,9 +133,9 @@ class InfoDialog(QDialog):
         self.setLayout(layout)
 
 class RegistrationSuccessDialog(QDialog):
-    def __init__(self, message, parent=None):
+    def __init__(self, message, parent=None, title="Registration Successful", success_text="✓ Account created successfully!"):
         super().__init__(parent)
-        self.setWindowTitle("Registration Successful")
+        self.setWindowTitle(title)
         self.setModal(True)
         self.setFixedSize(600, 450)  # Increased from 480x280 to prevent cutoffs
         
@@ -177,7 +177,7 @@ class RegistrationSuccessDialog(QDialog):
         layout.setContentsMargins(25, 25, 25, 25)  # Increased margins
         
         # Success message
-        success_label = QLabel("✓ Account created successfully!")
+        success_label = QLabel(success_text)
         success_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #2d5a27; padding: 8px;")
         layout.addWidget(success_label)
         
@@ -277,13 +277,13 @@ class RegistrationSuccessDialog(QDialog):
         """Extract recovery code from the message string"""
         print(f"Attempting to extract recovery code from: '{message}'")
         
-        # More specific patterns to find the recovery code
+        # More specific patterns to find the recovery code, now including hyphens
         patterns = [
-            r'recovery code:\s*([A-Z0-9_]{12,20})',    # Pattern with length constraint
-            r'code:\s*([A-Z0-9_]{12,20})',            # Shorter pattern with length
-            r'\b([A-Z0-9_]{16})\b',                    # Exact 16-character code
-            r'([A-Z0-9_]{12,20})',                     # 12-20 character alphanumeric with underscores
-            r'\b([A-Z0-9]{12,20})\b'                   # Fallback: 12-20 character alphanumeric only
+            r'recovery code:\s*([A-Z0-9_-]{12,20})',    # Pattern with length constraint
+            r'code:\s*([A-Z0-9_-]{12,20})',            # Shorter pattern with length
+            r'\b([A-Z0-9_-]{16})\b',                    # Exact 16-character code
+            r'([A-Z0-9_-]{12,20})',                     # 12-20 char alphanumeric with underscores/hyphens
+            r'\b([A-Z0-9-]{12,20})\b'                   # Fallback: 12-20 char alphanumeric with hyphens
         ]
         
         for i, pattern in enumerate(patterns):
@@ -294,8 +294,8 @@ class RegistrationSuccessDialog(QDialog):
                 code = match.upper()
                 # Validate it's not a common word and looks like a recovery code
                 if (len(code) >= 12 and 
-                    re.match(r'^[A-Z0-9_]+$', code) and 
-                    code not in ['REGISTRATION', 'SUCCESSFUL', 'GENERATED', 'READY']):
+                    re.match(r'^[A-Z0-9_-]+$', code) and 
+                    code not in ['REGISTRATION', 'SUCCESSFUL', 'SUCCESSFULLY', 'GENERATED', 'READY']):
                     print(f"Valid recovery code found: {code}")
                     return code
         

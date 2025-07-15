@@ -731,6 +731,10 @@ class AuthManager:
             new_salt = self.generate_salt()
             new_password_hash = self.hash_password(new_password, new_salt)
             
+            # Generate a new recovery code
+            new_recovery_code = self.generate_recovery_code()
+            new_recovery_code_hash = self.hash_recovery_code(new_recovery_code)
+
             # Expire any existing keys for the user
             self.key_manager.expire_all_user_keys(user_id)
             self.logger.log_activity(action="KEY_EXPIRATION", status="success",
@@ -746,18 +750,18 @@ class AuthManager:
                                      details=f"New keys generated for user {email} during account recovery.",
                                      email=email)
 
-            # Update user password and invalidate recovery code
+            # Update user password and set new recovery code
             query = """
                 UPDATE users 
-                SET password_hash = ?, salt = ?, recovery_code_hash = NULL 
+                SET password_hash = ?, salt = ?, recovery_code_hash = ? 
                 WHERE id = ?
             """
-            self.db.execute_query(query, (new_password_hash, new_salt, user_id))
+            self.db.execute_query(query, (new_password_hash, new_salt, new_recovery_code_hash, user_id))
             
             self.logger.log_activity(action="ACCOUNT_RECOVERY", status="success", 
                                          details=f"Account recovered and new keys generated for user: {email}", email=email)
             
-            return True, "Account recovered successfully. Your old keys have been expired, and new keys have been generated with your new passphrase."
+            return True, f"Account recovered successfully. Your old keys have expired and new keys have been generated. Here is your new recovery code: {new_recovery_code}"
             
         except Exception as e:
             self.logger.log_activity(action="ACCOUNT_RECOVERY", status="failure", 

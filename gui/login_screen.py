@@ -234,7 +234,14 @@ class LoginScreen(QWidget):
         )
         
         if success:
-            show_info(self, "Recovery Successful", message)
+            # Show custom dialog with the new recovery code
+            dialog = RegistrationSuccessDialog(
+                message, 
+                self,
+                title="Account Recovery Successful",
+                success_text="✓ Your account has been recovered!"
+            )
+            dialog.exec_()
             self.clear_recovery_form()
             self.tab_widget.setCurrentIndex(0)  # Switch to login tab
         else:
